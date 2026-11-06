@@ -1,0 +1,22 @@
+.metric-hr { color: #e01b24; }
+.metric-hrv { color: #9141ac; }
+.metric-spo2 { color: #3584e4; }
+.metric-resp { color: #2ec27e; }
+.metric-temp { color: #ff7800; }
+.metric-steps { color: #986a44; }
+.metric-sleep { color: #5e4fd6; }
+.metric-workout { color: #986a44; }
+.metric-device { color: #77767b; }
+.dot { font-size: 9px; }
+.calendar { padding: 6px; }
+.calendar-dot { font-size: 6px; }
+.calendar-day { padding: 2px 0; min-width: 0; min-height: 40px; }
+.calendar-day.selected-day { background-color: alpha(@accent_bg_color, 0.25); }
+.calendar-day.today .day-number { font-weight: bold; color: @accent_color; }
+.stale { opacity: 0.55; }
+/* Two linked groups side by side, squared where they meet so they read as one. */
+.joined > box:first-child > button:last-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.joined > box:last-child > button:first-child { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+/* Stacked, the lower row joins the row above it. */
+.stacked > box:last-child > button { border-top-left-radius: 0; border-top-right-radius: 0; }
+.sync-bar trough, .sync-bar trough > progress { min-height: 28px; border-radius: 6px; }

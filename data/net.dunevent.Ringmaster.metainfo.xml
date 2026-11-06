@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>net.dunevent.Ringmaster</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <name>Ringmaster</name>
+  <summary>Sync and view your smart ring</summary>
+  <description>
+    <p>
+      Ringmaster talks to your smart ring directly over Bluetooth and keeps its history in a
+      local database, with no cloud and no account.
+    </p>
+    <ul>
+      <li>Heart rate, heart rate variability, blood oxygen, respiratory rate and skin temperature</li>
+      <li>Daily history with a calendar and charts over any range of dates</li>
+      <li>Nightly sleep against your goal, with trends over recent weeks</li>
+      <li>Daily steps against your goal</li>
+      <li>Quick readings on demand, background sync and notifications on your own thresholds</li>
+      <li>More than one ring, each with its own history</li>
+      <li>One-time import of the history kept by the official RingConn Android app</li>
+    </ul>
+    <p>Tested on the RingConn Gen 2. Not affiliated with any ring maker. Not a medical device.</p>
+  </description>
+  <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#f0d0d2</color>
+    <color type="primary" scheme_preference="dark">#5c1a1f</color>
+  </branding>
+  <launchable type="desktop-id">net.dunevent.Ringmaster.desktop</launchable>
+  <developer id="net.dunevent">
+    <name>Ringmaster contributors</name>
+  </developer>
+  <update_contact>aj@dunevent.net</update_contact>
+  <url type="homepage">https://dev.dunevent.net/aj/Ringmaster</url>
+  <url type="bugtracker">https://dev.dunevent.net/aj/Ringmaster/issues</url>
+  <url type="vcs-browser">https://dev.dunevent.net/aj/Ringmaster</url>
+  <url type="donation">https://liberapay.com/ajdunevent/donate</url>
+  <recommends>
+    <display_length compare="ge">360</display_length>
+  </recommends>
+  <supports>
+    <control>pointing</control>
+    <control>touch</control>
+  </supports>
+  <releases>
+    <release version="0.1.0" date="2026-11-06">
+      <description>
+        <p>First release.</p>
+        <ul>
+          <li>Connects to a RingConn Gen 2, pairing it when needed, and syncs its full history</li>
+          <li>Latest, History, Sleep and Activity tabs</li>
+          <li>Background sync on a schedule, notifications and start at login</li>
+          <li>Several rings, one shown and synced at a time</li>
+          <li>Import from the official RingConn Android app</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+</component>

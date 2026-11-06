@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Ringmaster
+Comment=Sync and view your RingConn smart ring
+Exec=ringmaster
+Icon=net.dunevent.Ringmaster
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true
+X-Purism-FormFactor=Workstation;Mobile;

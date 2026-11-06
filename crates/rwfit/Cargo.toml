@@ -1,0 +1,10 @@
+[package]
+name = "rwfit"
+description = "RWfit smart ring BLE protocol (RWFit app family): framing, commands and record parsing, without I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+uuid = "1"

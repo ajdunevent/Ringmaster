@@ -1,0 +1,12 @@
+# Build output
+/target/
+/.flatpak/
+/.flatpak-builder/
+/build/
+/flatpak-build/
+/repo/
+/dist/
+
+# ringprobe reports hold a ring's address and health readings
+ringprobe-*.txt
+ringprobe-*.ppg.csv

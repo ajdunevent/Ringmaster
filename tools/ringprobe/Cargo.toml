@@ -1,0 +1,17 @@
+[package]
+name = "ringprobe"
+description = "One-shot RingConn probe: scan, pair, authenticate, and record what the ring answers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+ringconn = { path = "../../crates/ringconn" }
+rwfit = { path = "../../crates/rwfit" }
+anyhow = "1"
+bluer = { version = "0.17", features = ["bluetoothd"] }
+chrono = "0.4"
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal"] }
+uuid = "1"

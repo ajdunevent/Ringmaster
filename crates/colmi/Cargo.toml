@@ -1,0 +1,11 @@
+[package]
+name = "colmi"
+description = "Colmi smart ring BLE protocol: packets, requests and history parsing, without I/O"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+uuid = "1"

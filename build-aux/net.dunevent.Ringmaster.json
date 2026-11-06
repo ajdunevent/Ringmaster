@@ -1,0 +1,46 @@
+{
+    "id": "net.dunevent.Ringmaster",
+    "runtime": "org.gnome.Platform",
+    "runtime-version": "50",
+    "sdk": "org.gnome.Sdk",
+    "sdk-extensions": [
+        "org.freedesktop.Sdk.Extension.rust-stable"
+    ],
+    "command": "ringmaster",
+    "finish-args": [
+        "--share=ipc",
+        "--socket=wayland",
+        "--socket=fallback-x11",
+        "--device=dri",
+        "--system-talk-name=org.bluez"
+    ],
+    "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
+        "env": {
+            "CARGO_HOME": "/run/build/ringmaster/cargo",
+            "CARGO_NET_OFFLINE": "true"
+        }
+    },
+    "modules": [
+        {
+            "name": "ringmaster",
+            "buildsystem": "simple",
+            "build-commands": [
+                "cargo --offline build --release --locked -p ringmaster",
+                "install -Dm755 target/release/ringmaster /app/bin/ringmaster",
+                "install -Dm644 data/net.dunevent.Ringmaster.desktop /app/share/applications/net.dunevent.Ringmaster.desktop",
+                "install -Dm644 data/net.dunevent.Ringmaster.svg /app/share/icons/hicolor/scalable/apps/net.dunevent.Ringmaster.svg",
+                "install -Dm644 data/net.dunevent.Ringmaster-symbolic.svg /app/share/icons/hicolor/symbolic/apps/net.dunevent.Ringmaster-symbolic.svg",
+                "install -Dm644 data/net.dunevent.Ringmaster.metainfo.xml /app/share/metainfo/net.dunevent.Ringmaster.metainfo.xml"
+            ],
+            "sources": [
+                {
+                    "type": "dir",
+                    "path": "..",
+                    "skip": [".git", "target", ".flatpak-builder", "flatpak-build", "build", "repo", ".flatpak", "dist"]
+                },
+                "cargo-sources.json"
+            ]
+        }
+    ]
+}

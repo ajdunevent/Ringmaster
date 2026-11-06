@@ -1,0 +1,6 @@
+target
+flatpak-build
+flatpak-build-arm64
+.flatpak-builder
+.flatpak
+dist
