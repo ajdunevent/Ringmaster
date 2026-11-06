@@ -82,15 +82,18 @@ collected it, and keeps about 7 days, so a ring left unsynced for over a week lo
 
 ## Install
 
-Ringmaster can be installed from [AJHub](https://ajdunevent.github.io/AJHub/). Once you have
-[added the AJHub remote](https://ajdunevent.github.io/AJHub/), install it with:
+Ringmaster can be installed from [FuriHub](https://furihub.github.io/repo/). Once you have
+[added the FuriHub remote](https://furihub.github.io/repo/), install it with:
 
 ```sh
-flatpak install ajhub net.dunevent.Ringmaster
+flatpak install furihub net.dunevent.Ringmaster
 ```
 
-To install it for your user only, add `--user` to this command; the AJHub remote then needs to
+To install it for your user only, add `--user` to this command; the FuriHub remote then needs to
 have been added with `--user` as well.
+
+FuriHub carries aarch64 builds only. x86_64 builds are available from
+[AJHub](https://ajdunevent.github.io/AJHub/).
 
 ### Building it yourself
 
