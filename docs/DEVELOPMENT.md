@@ -59,3 +59,15 @@ cargo test
 
 The replay tests drive the drain state machine against a simulated ring that serves real Gen 2
 pages with the fetch and ACK behaviour recorded from hardware.
+
+## Releasing
+
+`.github/workflows/release.yml` calls the [FrogPak releaser](https://github.com/FrogPak/releaser)
+on GitHub. To release, add a `<release>` at the top of `<releases>` in
+`data/net.dunevent.Ringmaster.metainfo.xml` and push to `main`. When that version has no tag yet,
+the releaser builds `net.dunevent.Ringmaster-x86_64.flatpak` and
+`net.dunevent.Ringmaster-aarch64.flatpak`, creates the `v<version>` tag and a GitHub release with
+both bundles, and AJHub picks the release up. Any other push or pull request runs only the checks.
+
+After a change to `Cargo.lock`, regenerate `build-aux/cargo-sources.json` (see Flatpak above)
+before pushing, or the offline Flatpak build fails.
