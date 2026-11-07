@@ -720,17 +720,20 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
     {
         let window = window.clone();
         about.connect_activate(move |_, _| {
-            adw::AboutDialog::builder()
+            let dialog = adw::AboutDialog::builder()
                 .application_name("Ringmaster")
                 .application_icon("net.dunevent.Ringmaster")
                 .version(env!("CARGO_PKG_VERSION"))
                 .comments("A companion for RingConn smart rings that keeps everything on this device. Not affiliated with RingConn. Not a medical device.")
-                .developer_name("AJ")
-                .developers(["AJ"])
-                .copyright("© 2026 AJ")
+                .developer_name("Ringmaster contributors")
+                .developers(["AJ Dunevent"])
+                .copyright("© 2026 Ringmaster contributors")
                 .license_type(gtk::License::Gpl30)
-                .build()
-                .present(Some(&window));
+                .website("https://dev.dunevent.net/aj/Ringmaster")
+                .issue_url("https://dev.dunevent.net/aj/Ringmaster/issues")
+                .build();
+            dialog.add_link("Donate", "https://dunevent.net/donate");
+            dialog.present(Some(&window));
         });
     }
     let quit = gio::SimpleAction::new("quit", None);

@@ -42,7 +42,34 @@
     <control>pointing</control>
     <control>touch</control>
   </supports>
+  <screenshots>
+    <screenshot type="default">
+      <caption>The ring, its last sync and the latest reading of each measurement</caption>
+      <image>https://dev.dunevent.net/aj/Ringmaster/raw/branch/main/data/screenshots/latest.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A month calendar and one day's averages</caption>
+      <image>https://dev.dunevent.net/aj/Ringmaster/raw/branch/main/data/screenshots/history.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Time asleep each night against the goal, with averages</caption>
+      <image>https://dev.dunevent.net/aj/Ringmaster/raw/branch/main/data/screenshots/sleep.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Steps each day against the goal, with averages</caption>
+      <image>https://dev.dunevent.net/aj/Ringmaster/raw/branch/main/data/screenshots/activity.png</image>
+    </screenshot>
+  </screenshots>
   <releases>
+    <release version="0.1.2" date="2026-11-07">
+      <description>
+        <p>Metainfo updates.</p>
+        <ul>
+          <li>Screenshots</li>
+          <li>The About dialog shows the same developer and links</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.1" date="2026-11-07">
       <description>
         <p>Repository changes only.</p>
