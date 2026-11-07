@@ -34,7 +34,7 @@
   <url type="homepage">https://dev.dunevent.net/aj/Ringmaster</url>
   <url type="bugtracker">https://dev.dunevent.net/aj/Ringmaster/issues</url>
   <url type="vcs-browser">https://dev.dunevent.net/aj/Ringmaster</url>
-  <url type="donation">https://liberapay.com/ajdunevent/donate</url>
+  <url type="donation">https://dunevent.net/donate</url>
   <recommends>
     <display_length compare="ge">360</display_length>
   </recommends>
@@ -43,6 +43,14 @@
     <control>touch</control>
   </supports>
   <releases>
+    <release version="0.1.1" date="2026-11-07">
+      <description>
+        <p>Repository changes only.</p>
+        <ul>
+          <li>Changes how releases are created and mirrored</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-11-06">
       <description>
         <p>First release.</p>
