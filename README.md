@@ -82,39 +82,11 @@ collected it, and keeps about 7 days, so a ring left unsynced for over a week lo
 
 ## Install
 
-Ringmaster can be installed from [FuriHub](https://furihub.github.io/repo/). Once you have
-[added the FuriHub remote](https://furihub.github.io/repo/), install it with:
+### Flatpak (recommended)
 
-```sh
-flatpak install furihub net.dunevent.Ringmaster
-```
-
-To install it for your user only, add `--user` to this command; the FuriHub remote then needs to
-have been added with `--user` as well.
-
-FuriHub carries aarch64 builds only. x86_64 builds are available from
-[AJHub](https://ajdunevent.github.io/AJHub/).
-
-### Building it yourself
-
-As a Flatpak:
-
-```sh
-flatpak run org.flatpak.Builder --user --install --install-deps-from=flathub --force-clean build build-aux/net.dunevent.Ringmaster.json
-```
-
-Or directly on the system:
-
-```sh
-sudo apt install build-essential pkg-config libdbus-1-dev libgtk-4-dev libadwaita-1-dev
-cargo install --path crates/ringmaster
-install -Dm644 data/net.dunevent.Ringmaster.desktop ~/.local/share/applications/net.dunevent.Ringmaster.desktop
-install -Dm644 data/net.dunevent.Ringmaster.svg ~/.local/share/icons/hicolor/scalable/apps/net.dunevent.Ringmaster.svg
-install -Dm644 data/net.dunevent.Ringmaster-symbolic.svg ~/.local/share/icons/hicolor/symbolic/apps/net.dunevent.Ringmaster-symbolic.svg
-```
-
-`cargo install` puts the binary in `~/.cargo/bin`, which needs to be on the `PATH` your session
-starts with.
+| <a href="https://ajdunevent.github.io/AJHub/"><picture><source media="(prefers-color-scheme: dark)" srcset="https://ajdunevent.github.io/AJHub/badges/button-dark.svg"><img src="https://ajdunevent.github.io/AJHub/badges/button-light.svg" alt="AJHub, published with FrogPak" height="48"></picture></a> | <a href="https://furihub.github.io/repo/"><picture><source media="(prefers-color-scheme: dark)" srcset="https://furihub.github.io/repo/badges/button-dark.svg"><img src="https://furihub.github.io/repo/badges/button-light.svg" alt="FuriHub, published with FrogPak" height="48"></picture></a> |
+| --- | --- |
+| x86_64 & aarch64 | aarch64 only |
 
 ## Privacy
 
