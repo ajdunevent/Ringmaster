@@ -724,7 +724,7 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
                 .application_name("Ringmaster")
                 .application_icon("net.dunevent.Ringmaster")
                 .version(env!("CARGO_PKG_VERSION"))
-                .comments("A companion for RingConn smart rings that keeps everything on this device. Not affiliated with RingConn. Not a medical device.")
+                .comments("A companion for smart rings that keeps everything on this device. Not affiliated with any ring maker. Not a medical device.")
                 .developer_name("Ringmaster contributors")
                 .developers(["AJ Dunevent"])
                 .copyright("© 2026 Ringmaster contributors")

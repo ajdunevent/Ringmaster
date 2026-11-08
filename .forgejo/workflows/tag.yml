@@ -60,6 +60,12 @@ jobs:
             echo "$tag already exists; nothing to tag."
             exit 0
           fi
+          # Cargo.toml has to carry the same version, or the GitHub build refuses the tag.
+          cargo=$(sed -n '/^\[workspace\.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "$cargo" != "$version" ]; then
+            echo "Not tagging $tag: Cargo.toml says version $cargo, the metainfo says $version."
+            exit 1
+          fi
           git tag "$tag"
           git push origin "refs/tags/$tag"
           echo "Tagged $tag; the mirror carries it to GitHub, which releases it."

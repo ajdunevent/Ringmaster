@@ -61,6 +61,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.3" date="2026-11-07">
+      <description>
+        <p>Runtime update and a fix for finding rings.</p>
+        <ul>
+          <li>Uses the GNOME 51 runtime</li>
+          <li>Finds rings whose name or services arrive after they first appear in a scan</li>
+          <li>The About dialog no longer names one ring maker</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.2" date="2026-11-07">
       <description>
         <p>Metainfo updates.</p>

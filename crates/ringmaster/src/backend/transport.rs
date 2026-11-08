@@ -175,6 +175,10 @@ async fn scan_excluding(adapter: &Adapter, limit: Duration, skip: &[Address]) ->
     pin_mut!(stream);
     let deadline = Instant::now() + limit;
     let mut candidates: Vec<Device> = Vec::new();
+    // BlueZ can add a device before its name or services arrive, so devices that did not look
+    // like rings are checked again until the deadline.
+    let mut unknown: Vec<Device> = Vec::new();
+    let mut rechecked = Instant::now();
     loop {
         for device in &candidates {
             if let Ok(Some(rssi)) = device.rssi().await {
@@ -184,6 +188,18 @@ async fn scan_excluding(adapter: &Adapter, limit: Duration, skip: &[Address]) ->
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
             return Ok(None);
+        }
+        if rechecked.elapsed() >= RECHECK {
+            rechecked = Instant::now();
+            let mut still = Vec::new();
+            for device in unknown.drain(..) {
+                if is_ring(&device).await {
+                    candidates.push(device);
+                } else {
+                    still.push(device);
+                }
+            }
+            unknown = still;
         }
         let evt = match timeout(left.min(Duration::from_millis(500)), stream.next()).await {
             Ok(Some(e)) => e,
@@ -197,9 +213,14 @@ async fn scan_excluding(adapter: &Adapter, limit: Duration, skip: &[Address]) ->
         let Ok(device) = adapter.device(addr) else { continue };
         if is_ring(&device).await {
             candidates.push(device);
+        } else {
+            unknown.push(device);
         }
     }
 }
+
+/// How often devices that did not yet look like rings are checked again during a scan.
+const RECHECK: Duration = Duration::from_secs(2);
 
 /// `connect()` may never resolve on FLX1s although the link comes up a few seconds later, so the
 /// connection state is polled.

@@ -123,8 +123,7 @@ Everything stays on your device: readings in `~/.local/share/ringmaster/` (or
 
 ## Support the project
 
-- [Liberapay](https://liberapay.com/ajdunevent/donate)
-- [PayPal](https://paypal.me/ajdunevent)
+If Ringmaster is useful to you, you can [support its development](https://dunevent.net/donate).
 
 Bugs and ideas: [issues](https://dev.dunevent.net/aj/Ringmaster/issues). Building, testing and the
 protocol notes: `docs/DEVELOPMENT.md`.

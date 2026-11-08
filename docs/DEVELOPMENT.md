@@ -42,11 +42,13 @@ one device should sync it.
 | `crates/colmi` | Colmi protocol without I/O: packets, requests, history and big-data decoding |
 | `crates/rwfit` | RWfit protocol without I/O: recognition, both framings, record decoding |
 | `crates/ringmaster` | The app: BlueZ transport, SQLite store, backend thread, GTK window |
+| `build-aux/` | Flatpak manifest, vendored crate list and `dev.sh` |
+| `.forgejo/workflows/`, `.github/workflows/` | Tagging on the forge, building and releasing on GitHub |
 | `tools/ringprobe` | Diagnostic probe: records a ring's answers in one text report; see its README |
 | `docs/PROTOCOL.md` | The RingConn protocol as currently understood, with sources and confidence for each fact |
 | `docs/COLMI.md`, `docs/RWFIT.md`, `docs/ULTRAHUMAN.md` | Notes on other brands, with sources |
 | `docs/bluez/` | Why BlueZ drops RWfit rings, with a patch for BlueZ 5.85 |
-| `docs/project/` | Conventions, the comment style guide and the backlog |
+| `docs/project/` | Conventions and the backlog |
 | `.no-sync` | Build output that device sync should skip: one name per line, direct children of this folder only |
 
 `crates/ringconn/tests/fixtures` holds real history pages from a tested ring.
@@ -62,12 +64,16 @@ pages with the fetch and ACK behaviour recorded from hardware.
 
 ## Releasing
 
-`.github/workflows/release.yml` calls the [FrogPak releaser](https://github.com/FrogPak/releaser)
-on GitHub. To release, add a `<release>` at the top of `<releases>` in
-`data/net.dunevent.Ringmaster.metainfo.xml` and push to `main`. When that version has no tag yet,
-the releaser builds `net.dunevent.Ringmaster-x86_64.flatpak` and
-`net.dunevent.Ringmaster-aarch64.flatpak`, creates the `v<version>` tag and a GitHub release with
-both bundles, and AJHub picks the release up. Any other push or pull request runs only the checks.
+Change the version in `Cargo.toml`, add a `<release>` at the top of `<releases>` in
+`data/net.dunevent.Ringmaster.metainfo.xml`, and push to `main`. `.forgejo/workflows/tag.yml`
+then tags the commit `v<version>` on the forge, or fails without tagging if the two versions
+differ. The push mirror carries the tag to GitHub, where `.github/workflows/release.yml` runs the
+[FrogPak releaser](https://github.com/FrogPak/releaser): it builds
+`net.dunevent.Ringmaster-x86_64.flatpak` and `net.dunevent.Ringmaster-aarch64.flatpak` and
+publishes a GitHub release with both, which FuriHub and AJHub pick up.
 
-After a change to `Cargo.lock`, regenerate `build-aux/cargo-sources.json` (see Flatpak above)
-before pushing, or the offline Flatpak build fails.
+`Cargo.lock` does not need updating by hand for a version change; the Flatpak build updates the
+workspace crates' versions in it offline.
+
+Tags must not be made on GitHub: the mirror deletes any tag the forge does not have, and GitHub
+then turns that tag's release into a draft, which the Ponds drop.

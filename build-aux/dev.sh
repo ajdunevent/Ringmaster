@@ -136,7 +136,7 @@ build_app() {
         --env=CARGO_TARGET_DIR="$PWD/$state/target"
         --env=CARGO_TERM_COLOR=always "$state/build")
     echo "==> Compiling $arch ($profile)"
-    "${sdk_shell[@]}" cargo build --profile "$profile" --locked -p "$MODULE"
+    "${sdk_shell[@]}" cargo build --profile "$profile" -p "$MODULE"
     # shellcheck disable=SC2016 # $1 expands inside the sandbox.
     "${sdk_shell[@]}" sh -c '
         set -e
