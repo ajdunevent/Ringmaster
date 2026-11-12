@@ -121,6 +121,11 @@ fn minutes_of_day(unix: i64) -> i64 {
 
 /// Average time of day, counted from `pivot` minutes past midnight so times either side of
 /// midnight average sensibly (noon for bedtimes, midnight for waking).
+/// Seconds as hours, rounded to the tenth the pages display.
+fn tenths_of_hours(seconds: i64) -> f64 {
+    (seconds as f64 / 360.0).round() / 10.0
+}
+
 fn average_clock(minutes: &[i64], pivot: i64) -> Option<String> {
     if minutes.is_empty() {
         return None;
@@ -179,12 +184,14 @@ impl SleepPage {
         let nights = by_end_day(&spans, local_day);
         let goal_minutes = store.settings().unwrap_or_default().sleep_goal_minutes;
         let goal_h = goal_minutes as f64 / 60.0;
-        // Hours asleep per day, with each night's window and minutes awake.
+        // Hours asleep per day, with each night's window and minutes awake. Hours are rounded to
+        // the tenth shown on the page before they are compared with the goal, so a night shown
+        // as 7.0 h meets a 7 h goal.
         let mut asleep: BTreeMap<NaiveDate, (f64, i64)> = BTreeMap::new();
         for (day, spans) in &nights {
             let awake: i64 = spans.iter().map(|(a, b)| store.awake(&ring, *a, *b).unwrap_or(0)).sum();
             let total: i64 = spans.iter().map(|(a, b)| b - a).sum();
-            asleep.insert(*day, ((total - awake) as f64 / 3600.0, awake));
+            asleep.insert(*day, (tenths_of_hours(total - awake), awake));
         }
         let bars = days.iter().map(|d| Bar { label: d.format("%-d").to_string(), value: asleep.get(d).map_or(0.0, |a| a.0) }).collect();
         f.bars.set(bars, Some(goal_h), SLEEP, |v| format!("{v:.0} h"));
@@ -287,6 +294,15 @@ impl ActivityPage {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hours_round_to_the_shown_tenth() {
+        // 6 h 59 min 50 s shows as 7.0 h, so it has to meet a 7 h goal.
+        assert!(tenths_of_hours(7 * 3600 - 10) >= 7.0);
+        // 6 h 56 min 59 s shows as 6.9 h.
+        assert!(tenths_of_hours(7 * 3600 - 181) < 7.0);
+        assert_eq!(tenths_of_hours(7 * 3600 + 15 * 60), 7.3);
+    }
 
     #[test]
     fn clock_average_across_midnight() {
