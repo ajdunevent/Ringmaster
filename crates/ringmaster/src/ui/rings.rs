@@ -10,21 +10,23 @@ pub(super) fn brand_name(entry: &RingEntry) -> &'static str {
     }
 }
 
-/// "RingConn · synced Today 14:32", or "Ultrahuman · forgotten".
+/// "RingConn · synced Today 14:32", or "Ultrahuman · never synced".
 pub(super) fn subtitle(entry: &RingEntry) -> String {
-    let state = if entry.forgotten {
-        "forgotten".to_string()
-    } else {
-        entry.last_sync.map_or_else(|| "never synced".into(), |t| format!("synced {}", super::when(t)))
-    };
+    let state = entry.last_sync.map_or_else(|| "never synced".into(), |t| format!("synced {}", super::when(t)));
     format!("{} · {state}", brand_name(entry))
 }
 
-/// Radio rows for `entries`, with `current` checked; `on_pick` gets the address chosen.
+/// Radio rows for `entries`, with `current` checked; `on_pick` gets the address chosen. A lone
+/// ring has nothing to choose between, so it gets the ring icon instead of a lone check box.
 pub(super) fn radio_rows(entries: &[RingEntry], current: Option<&str>, on_pick: impl Fn(String) + Clone + 'static) -> Vec<adw::ActionRow> {
     use adw::prelude::*;
     let mut first: Option<gtk::CheckButton> = None;
     let mut rows = Vec::new();
+    if let [e] = entries {
+        let row = adw::ActionRow::builder().title(glib::markup_escape_text(&e.info.display_name())).subtitle(subtitle(e)).build();
+        row.add_prefix(&gtk::Image::from_icon_name("ringmaster-ring-symbolic"));
+        return vec![row];
+    }
     for e in entries {
         let check = gtk::CheckButton::new();
         if let Some(f) = &first {

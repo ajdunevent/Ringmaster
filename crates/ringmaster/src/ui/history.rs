@@ -330,7 +330,10 @@ impl HistoryPage {
     }
 
     fn load_marks(&self) {
-        let Some((store, ring)) = self.ring() else { return };
+        let Some((store, ring)) = self.ring() else {
+            self.inner.calendar.set_marks(Default::default());
+            return;
+        };
         let month = self.inner.calendar.month();
         let next = first_of_month(month + Days::days(32));
         if let Ok(marks) = store.day_marks(&ring, local_midnight(month), local_midnight(next)) {

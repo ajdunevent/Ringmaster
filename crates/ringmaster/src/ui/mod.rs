@@ -305,7 +305,7 @@ pub fn build_window(
     let (battery_box, battery_icon, battery) = battery_indicator();
     battery_box.set_margin_end(6);
     battery_box.set_visible(false);
-    let ring_row = adw::ActionRow::builder().title("No ring yet").subtitle("Not connected").build();
+    let ring_row = adw::ActionRow::builder().title("No rings configured").subtitle("Not connected").build();
     let ring_switch = gtk::Image::builder().icon_name("pan-down-symbolic").visible(false).build();
     ring_row.add_suffix(&ring_switch);
     ring_row.add_suffix(&battery_box);
@@ -813,7 +813,12 @@ fn steps_text(steps: i64, goal: u32) -> String {
 }
 
 fn show_steps(w: &Widgets) {
-    let (Some(store), Some(ring)) = (w.store.as_ref(), w.ring.borrow().clone()) else { return };
+    let Some(store) = w.store.as_ref() else { return };
+    let Some(ring) = w.ring.borrow().clone() else {
+        w.steps.1.set_text("–");
+        w.steps.0.set_subtitle("");
+        return;
+    };
     let Ok((steps, source)) = store.steps_today(&ring) else { return };
     w.steps.1.set_text(&steps_text(steps, w.settings.borrow().step_goal));
     w.steps.0.set_subtitle(match source {
@@ -1016,7 +1021,8 @@ fn set_status(m: &Measure, text: &str) {
 }
 
 fn load_week(w: &Widgets) {
-    let (Some(store), Some(ring)) = (w.store.as_ref(), w.ring.borrow().clone()) else { return };
+    let Some(store) = w.store.as_ref() else { return };
+    let ring = w.ring.borrow().clone();
     let span = w.week.span.get();
     let (from, to) = match span {
         Span::Week => {
@@ -1033,7 +1039,7 @@ fn load_week(w: &Widgets) {
         }
     };
     let metric = w.week.metric.get();
-    let points = series(store, &ring, metric, from, to);
+    let points = ring.as_deref().map(|r| series(store, r, metric, from, to)).unwrap_or_default();
     let p = metric.precision();
     // History arrives at each sync, so the hour view says how recent its newest reading is.
     let latest = match (span, points.last()) {
@@ -1064,7 +1070,8 @@ fn load_week(w: &Widgets) {
                 format!("No {} readings in the past {span}", metric.name().to_lowercase())
             }),
     );
-    w.week.chart.set(metric, from, to, points, store.sleep(&ring, from, to).unwrap_or_default());
+    let sleep = ring.as_deref().and_then(|r| store.sleep(r, from, to).ok()).unwrap_or_default();
+    w.week.chart.set(metric, from, to, points, sleep);
 }
 
 /// Hours to one decimal place, for example "6.5 h".
@@ -1299,6 +1306,14 @@ fn show_summary(w: &Widgets, s: &Summary) {
         }
         w.measure.kinds.set_visible(spo2);
         w.quick_row.set_subtitle(if spo2 { "Heart rate or blood oxygen, about 30 seconds" } else { "Heart rate, about 30 seconds" });
+    } else {
+        // Every ring has been forgotten, or none added yet.
+        w.ring_row.set_title("No rings configured");
+        w.ring_name.replace(None);
+        if w.ring.replace(None).is_some() {
+            w.last_telemetry.replace(None);
+            w.battery_box.set_visible(false);
+        }
     }
     show_connect(w);
     let several = w.store.as_ref().and_then(|st| st.rings().ok()).is_some_and(|r| r.len() > 1);
@@ -1337,7 +1352,8 @@ pub(super) fn sleep_subtitle(spans: &[(i64, i64)], awake: i64, at: impl Fn(i64) 
 
 /// The longest sleep that ended in the past day, so a later nap does not replace the night.
 fn show_sleep(w: &Widgets) {
-    let (Some(store), Some(ring)) = (w.store.as_ref(), w.ring.borrow().clone()) else { return };
+    let Some(store) = w.store.as_ref() else { return };
+    let ring = w.ring.borrow().clone().unwrap_or_default();
     let now = chrono::Utc::now().timestamp();
     let last = store
         .sleep(&ring, now - 86_400, now)

@@ -233,18 +233,20 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
     import.add_suffix(&import_button);
     ring.add(&import);
     let forget_button = gtk::Button::builder().label("Forget").valign(gtk::Align::Center).css_classes(["destructive-action"]).build();
-    let forget = adw::ActionRow::builder().title("Forget this ring").subtitle("Removes the pairing; its history stays").build();
+    let forget = adw::ActionRow::builder()
+        .title("Forget this ring")
+        .subtitle("Removes it from Ringmaster and unpairs it; its history stays")
+        .build();
     forget.add_suffix(&forget_button);
     ring.add(&forget);
 
     // Fills the Ring group for the selected ring.
     let show_ring = {
-        let (ctx, selected, ring, name, case, import, forget) =
-            (ctx.clone(), selected.clone(), ring.clone(), name.clone(), case.clone(), import.clone(), forget.clone());
+        let (selected, ring, name, case, import, forget) =
+            (selected.clone(), ring.clone(), name.clone(), case.clone(), import.clone(), forget.clone());
         let several = entries.len() > 1;
         move || {
             let info = selected.borrow().clone();
-            let forgotten = info.as_ref().is_some_and(|r| ctx.store.is_forgotten(&r.address).unwrap_or(false));
             ring.set_title(&info.as_ref().filter(|_| several).map_or_else(|| "Ring".into(), |r| r.display_name()));
             // The ring's own name shows as the title, and as the placeholder while the field is empty.
             name.set_title(&info.as_ref().and_then(|r| r.name.clone()).unwrap_or_else(|| "Name".into()));
@@ -255,7 +257,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
             let ringconn = info.as_ref().is_some_and(|r| r.brand.as_deref().is_none_or(|b| b == crate::store::RINGCONN));
             case.set_visible(ringconn);
             import.set_visible(ringconn);
-            forget.set_visible(info.is_some() && !forgotten);
+            forget.set_visible(info.is_some());
         }
     };
     show_ring();
@@ -413,7 +415,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         forget_button.connect_clicked(move |_| {
             let confirm = adw::AlertDialog::new(
                 Some("Forget this ring?"),
-                Some("Ringmaster removes the pairing and stops connecting. The history stays. To use the ring again, seat it in its case or on its charger for a moment, take it off and press Add Ring."),
+                Some("Ringmaster unpairs the ring and removes it from its list of rings. Its history stays here and comes back if the ring is added again."),
             );
             confirm.add_responses(&[("cancel", "Cancel"), ("forget", "Forget")]);
             confirm.set_response_appearance("forget", adw::ResponseAppearance::Destructive);

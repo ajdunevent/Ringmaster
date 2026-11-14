@@ -303,9 +303,6 @@ impl Backend {
         }
 
         let Some(ring) = self.ring_address() else { return };
-        if self.conn.is_none() && self.store.is_forgotten(&ring).unwrap_or(true) {
-            return;
-        }
         let last = self.store.last_sync(&ring).ok().flatten();
         if let Some(last) = last {
             self.alert(Stat::DaysSinceSync, (now - last) as f64 / 86_400.0, now);
@@ -498,13 +495,18 @@ impl Backend {
         if let Some(ring) = &ring {
             self.store.forget_ring(ring)?;
         }
+        // The window shows the next ring, or none, before BlueZ is asked to drop the bond.
+        self.refresh();
+        // The ring is forgotten either way; a bond left behind is only logged.
         if let Some(addr) = ring.and_then(|a| a.parse::<Address>().ok()) {
-            let adapter = self.bluetooth().await?.adapter.clone();
-            if let Err(e) = adapter.remove_device(addr).await {
-                tracing::info!(error = %e, "removing the bond failed");
+            let removed = match self.bluetooth().await {
+                Ok(bluetooth) => bluetooth.adapter.remove_device(addr).await.map_err(anyhow::Error::from),
+                Err(e) => Err(e),
+            };
+            if let Err(e) = removed {
+                tracing::info!(error = %format!("{e:#}"), "removing the bond failed");
             }
         }
-        self.refresh();
         Ok(())
     }
 
@@ -529,7 +531,7 @@ impl Backend {
 
     /// Rings stored here and not forgotten; a search for a new ring skips them.
     fn kept_rings(&self) -> Vec<Address> {
-        self.store.rings().unwrap_or_default().into_iter().filter(|r| !r.forgotten).filter_map(|r| r.info.address.parse().ok()).collect()
+        self.store.rings().unwrap_or_default().into_iter().filter_map(|r| r.info.address.parse().ok()).collect()
     }
 
     fn choices(&self, found: &[(Address, String, i16)]) -> Vec<RingChoice> {

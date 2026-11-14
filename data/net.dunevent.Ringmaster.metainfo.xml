@@ -61,6 +61,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.7" date="2026-11-14">
+      <description>
+        <p>Forgotten rings are removed from Ringmaster.</p>
+        <ul>
+          <li>Forgotten rings no longer appear in the ring lists or on the Latest page</li>
+          <li>Forgetting the ring shown switches to another ring, or shows that none is configured</li>
+          <li>A forgotten ring's history returns if the ring is added again</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.6" date="2026-11-14">
       <description>
         <p>Clearer adding and switching of rings.</p>

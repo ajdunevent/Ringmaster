@@ -213,7 +213,6 @@ impl RingInfo {
 pub struct RingEntry {
     pub info: RingInfo,
     pub last_sync: Option<i64>,
-    pub forgotten: bool,
 }
 
 /// Settings key holding the address of the ring chosen in Ringmaster.
@@ -632,12 +631,13 @@ impl Store {
         Ok(())
     }
 
-    /// The ring chosen in Ringmaster, or else the most recently synced ring. It can be forgotten.
+    /// The ring chosen in Ringmaster, or else the most recently synced ring; never a forgotten
+    /// ring.
     pub fn default_ring(&self) -> Result<Option<String>> {
         Ok(self
             .conn
             .query_row(
-                "SELECT address FROM rings
+                "SELECT address FROM rings WHERE forgotten = 0
                  ORDER BY address = (SELECT value FROM settings WHERE key = ?1) DESC, COALESCE(last_sync, 0) DESC LIMIT 1",
                 [ACTIVE_RING],
                 |r| r.get(0),
@@ -645,9 +645,9 @@ impl Store {
             .optional()?)
     }
 
-    /// The ring Ringmaster connects to: the default ring unless it has been forgotten.
+    /// The ring Ringmaster connects to, the default ring.
     pub fn ring_to_connect(&self) -> Result<Option<String>> {
-        Ok(self.default_ring()?.filter(|a| !self.is_forgotten(a).unwrap_or(true)))
+        self.default_ring()
     }
 
     pub fn set_default_ring(&self, address: &str) -> Result<()> {
@@ -659,18 +659,11 @@ impl Store {
         Ok(())
     }
 
-    pub fn is_forgotten(&self, address: &str) -> Result<bool> {
-        Ok(self
-            .conn
-            .query_row("SELECT forgotten FROM rings WHERE address = ?1", [address], |r| r.get::<_, bool>(0))
-            .optional()?
-            .unwrap_or(false))
-    }
-
-    /// Every ring with history here, most recently synced first.
+    /// Rings not forgotten, most recently synced first. A forgotten ring's history stays and
+    /// returns when the ring is added again.
     pub fn rings(&self) -> Result<Vec<RingEntry>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT address, name, serial, firmware, hardware, nickname, brand, last_sync, forgotten FROM rings
+            "SELECT address, name, serial, firmware, hardware, nickname, brand, last_sync FROM rings WHERE forgotten = 0
              ORDER BY COALESCE(last_sync, 0) DESC, address",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -685,7 +678,6 @@ impl Store {
                     brand: r.get(6)?,
                 },
                 last_sync: r.get(7)?,
-                forgotten: r.get(8)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -1129,9 +1121,12 @@ mod tests {
         store.set_default_ring(b).unwrap();
         assert_eq!(store.default_ring().unwrap().as_deref(), Some(b));
         store.forget_ring(b).unwrap();
-        assert_eq!(store.default_ring().unwrap().as_deref(), Some(b));
-        assert_eq!(store.ring_to_connect().unwrap(), None);
-        assert!(store.rings().unwrap().iter().any(|r| r.info.address == b && r.forgotten));
+        // The other ring takes over, and the forgotten one leaves the list.
+        assert_eq!(store.default_ring().unwrap().as_deref(), Some(a));
+        assert!(store.rings().unwrap().iter().all(|r| r.info.address != b));
+        store.forget_ring(a).unwrap();
+        assert_eq!(store.default_ring().unwrap(), None);
+        assert!(store.rings().unwrap().is_empty());
         // Connecting again stores the ring anew.
         store.upsert_ring(&RingInfo { address: b.into(), ..Default::default() }).unwrap();
         assert_eq!(store.ring_to_connect().unwrap().as_deref(), Some(b));
