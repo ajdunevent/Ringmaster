@@ -244,7 +244,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
             name.set_text(&info.as_ref().and_then(|r| r.nickname.clone()).unwrap_or_default());
             name.set_visible(info.is_some());
             // The import reads the RingConn app's database.
-            import.set_visible(info.as_ref().is_some_and(|r| r.brand.as_deref() != Some(crate::store::COLMI)));
+            import.set_visible(info.as_ref().is_some_and(|r| r.brand.as_deref().is_none_or(|b| b == crate::store::RINGCONN)));
             forget.set_visible(info.is_some() && !forgotten);
         }
     };
@@ -403,7 +403,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         forget_button.connect_clicked(move |_| {
             let confirm = adw::AlertDialog::new(
                 Some("Forget this ring?"),
-                Some("Ringmaster removes the pairing and stops connecting. The history stays. To use the ring again, seat it in its case for a moment, take it out and press Connect."),
+                Some("Ringmaster removes the pairing and stops connecting. The history stays. To use the ring again, seat it in its case or on its charger for a moment, take it off and press Connect."),
             );
             confirm.add_responses(&[("cancel", "Cancel"), ("forget", "Forget")]);
             confirm.set_response_appearance("forget", adw::ResponseAppearance::Destructive);

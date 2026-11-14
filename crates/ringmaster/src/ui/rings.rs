@@ -1,15 +1,16 @@
 //! The list of rings shared by the main page's ring picker and Preferences.
 
-use crate::store::{RingEntry, COLMI};
+use crate::store::{RingEntry, COLMI, ULTRAHUMAN};
 
 pub(super) fn brand_name(entry: &RingEntry) -> &'static str {
     match entry.info.brand.as_deref() {
         Some(COLMI) => "Colmi",
+        Some(ULTRAHUMAN) => "Ultrahuman",
         _ => "RingConn",
     }
 }
 
-/// "RingConn · synced Today 14:32", or "Colmi · forgotten".
+/// "RingConn · synced Today 14:32", or "Ultrahuman · forgotten".
 pub(super) fn subtitle(entry: &RingEntry) -> String {
     let state = if entry.forgotten {
         "forgotten".to_string()

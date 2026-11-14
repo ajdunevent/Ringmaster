@@ -38,6 +38,8 @@ report.
 | `--listen SECONDS` | Length of the passive listen (default 60) |
 | `--skip-live` | Leave out the live heart-rate reading |
 | `--live-test` | Compare ways of starting a live reading (about 4 minutes) |
+| `--ultrahuman` | An Ultrahuman Ring AIR instead of a RingConn: state, clock, every stored record (they stay on the ring) and 30 s of live heart rate. Only rings advertising now count; with several, it asks which |
+| `--ultrahuman-state MINUTES` | An Ultrahuman ring's battery, ring temperature and charging state for 1 to 240 minutes, with no commands sent |
 | `--out FILE` | Report path |
 
 ## Options that need `--risky`

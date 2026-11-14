@@ -4,6 +4,7 @@ mod protocol;
 mod report;
 mod rwfit_probe;
 mod transport;
+mod ultrahuman_probe;
 
 use anyhow::{anyhow, bail, Context, Result};
 use bluer::gatt::remote::Characteristic;
@@ -55,6 +56,11 @@ Usage: ringprobe [options]
   --rwfit                      an RWfit ring (RWFit app family) instead of a RingConn: framing,
                                identity, binding, features, battery and every history stream;
                                reading history may remove it from the ring
+  --ultrahuman                 an Ultrahuman Ring AIR instead of a RingConn: state, clock, record
+                               numbers, every stored record (records stay on the ring), then
+                               30 s of live heart rate unless --skip-live
+  --ultrahuman-state MINUTES   an Ultrahuman ring's state (battery, ring temperature, charging)
+                               logged for 1 to 240 minutes, with no commands sent
   --raw-ppg                    with --overnight: raw PPG all night instead of SpO2 sessions
                                (factory-mode PPG sessions, each ended with 20 01 00 and
                                restarted, reconnecting as needed; stops if the ring stops
@@ -92,6 +98,8 @@ struct Options {
     osa: Option<explore::OsaPlan>,
     ppg: Option<explore::PpgPlan>,
     rwfit: bool,
+    ultrahuman: bool,
+    ultrahuman_state: Option<u64>,
     out: PathBuf,
 }
 
@@ -107,6 +115,8 @@ fn parse_args() -> Result<Options> {
         osa: None,
         ppg: None,
         rwfit: false,
+        ultrahuman: false,
+        ultrahuman_state: None,
         out: PathBuf::from(format!("ringprobe-{}.txt", Local::now().format("%Y%m%d-%H%M%S"))),
     };
     let (mut hours, mut min_battery, mut ppg_seconds) = (None, 40u8, 30u64);
@@ -152,6 +162,16 @@ fn parse_args() -> Result<Options> {
             }
             "--raw-ppg" => raw_ppg = true,
             "--rwfit" => o.rwfit = true,
+            "--ultrahuman" => o.ultrahuman = true,
+            "--ultrahuman-state" => {
+                let m: u64 =
+                    args.next().context("--ultrahuman-state needs a number of minutes")?.parse().context("bad --ultrahuman-state")?;
+                if !(1..=240).contains(&m) {
+                    bail!("--ultrahuman-state takes 1 to 240 minutes");
+                }
+                o.ultrahuman = true;
+                o.ultrahuman_state = Some(m);
+            }
             "--risky" => risky = true,
             "--ppg-rest" => {
                 ppg_rest = args.next().context("--ppg-rest needs a value")?.parse().context("bad --ppg-rest")?;
@@ -233,6 +253,8 @@ struct Shared {
     device: Mutex<Option<Device>>,
     command: Mutex<Option<Characteristic>>,
     live_active: AtomicBool,
+    /// A write that undoes a mode the run started, sent on cleanup if still set.
+    stop: Mutex<Option<(Characteristic, Vec<u8>)>>,
 }
 
 impl Shared {
@@ -293,6 +315,10 @@ async fn probe() -> std::process::ExitCode {
         r = async {
             if opts.rwfit {
                 rwfit_probe::run(opts.address, report.clone(), shared.clone()).await
+            } else if let Some(minutes) = opts.ultrahuman_state {
+                ultrahuman_probe::watch_state(opts.address, minutes, report.clone(), shared.clone()).await
+            } else if opts.ultrahuman {
+                ultrahuman_probe::run(opts.address, opts.live, report.clone(), shared.clone()).await
             } else {
                 run(&opts, report.clone(), shared.clone()).await
             }
@@ -314,6 +340,10 @@ async fn probe() -> std::process::ExitCode {
             env!("CARGO_PKG_VERSION"),
             if opts.rwfit {
                 "RWfit ring (history read and acknowledged frame by frame)"
+            } else if opts.ultrahuman_state.is_some() {
+                "none (Ultrahuman state only)"
+            } else if opts.ultrahuman {
+                "Ultrahuman ring (every stored record read; records stay on the ring)"
             } else if opts.explore.is_some() || opts.osa.is_some() || opts.ppg.is_some() {
                 "explore (only unknown page types acknowledged)"
             } else if opts.overnight.is_some() {
@@ -345,6 +375,11 @@ async fn cleanup(shared: &Shared, report: &Report) {
             report.tx(&cmd::LIVE_OFF, "leave live mode (cleanup)");
             let _ = tokio::time::timeout(Duration::from_secs(3), c.write_ext(&cmd::LIVE_OFF, &transport::write_request())).await;
         }
+    }
+    let stop = shared.stop.lock().unwrap().take();
+    if let Some((c, bytes)) = stop {
+        report.tx(&bytes, "undo the mode the run started (cleanup)");
+        let _ = tokio::time::timeout(Duration::from_secs(3), c.write_ext(&bytes, &transport::write_request())).await;
     }
     let device = shared.device.lock().unwrap().clone();
     if let Some(d) = device {
@@ -835,7 +870,7 @@ fn findings(opts: &Options, report: &Report, shared: &Shared, error: Option<Stri
     if let Some(e) = &error {
         report.finding("Run", format!("STOPPED EARLY: {e}"));
     }
-    if opts.rwfit {
+    if opts.rwfit || opts.ultrahuman {
         return;
     }
     report.finding("1. GATT layout matches section 2?", missing(&r.gatt));

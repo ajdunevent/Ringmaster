@@ -38,7 +38,24 @@ pub fn agent() -> Agent {
 pub async fn is_ring(device: &Device) -> bool {
     let name = device.name().await.ok().flatten().unwrap_or_default();
     let uuids = device.uuids().await.ok().flatten().unwrap_or_default();
-    name.starts_with("RingConn") || uuids.contains(&DATA_SERVICE) || is_colmi_with(&name, &uuids)
+    name.starts_with("RingConn") || uuids.contains(&DATA_SERVICE) || is_colmi_with(&name, &uuids) || is_ultrahuman_with(&name, &uuids)
+}
+
+pub async fn is_ultrahuman(device: &Device) -> bool {
+    let name = device.name().await.ok().flatten().unwrap_or_default();
+    let uuids = device.uuids().await.ok().flatten().unwrap_or_default();
+    is_ultrahuman_with(&name, &uuids)
+}
+
+fn is_ultrahuman_with(name: &str, uuids: &std::collections::HashSet<bluer::Uuid>) -> bool {
+    ultrahuman::is_ultrahuman(Some(name), uuids.iter())
+}
+
+/// The Ultrahuman state value (battery, charging), read once on connect; afterwards it is
+/// notified.
+pub async fn ultrahuman_state(device: &Device) -> Option<Vec<u8>> {
+    let state = characteristics(device, ultrahuman::STATE_SERVICE, &[ultrahuman::STATE]).await.ok()?.into_iter().next().flatten()?;
+    timeout(Duration::from_secs(5), state.read()).await.ok()?.ok()
 }
 
 pub async fn is_colmi(device: &Device) -> bool {
@@ -240,7 +257,7 @@ pub async fn connect(device: &Device) -> Result<()> {
         }
         sleep(Duration::from_millis(500)).await;
     }
-    Err(anyhow!("the ring did not connect; seat it in its case for a moment, take it out and try again"))
+    Err(anyhow!("the ring did not connect; seat it in its case or on its charger for a moment, take it off and try again"))
 }
 
 /// `pair()` may never resolve on FLX1s although bonding completes, so the bond state is polled
@@ -434,6 +451,30 @@ impl Link {
         };
         let op = write_op(&write).await;
         Ok(Self { cmd: (write, op), data, rx, last_send: None, readers })
+    }
+
+    /// Ultrahuman rings: commands with responses on one service, live data on another, both
+    /// delivered as frames, and the state characteristic delivered as data. The response
+    /// characteristic needs a bond.
+    pub async fn open_ultrahuman(device: &Device) -> Result<Self> {
+        let mut found =
+            characteristics(device, ultrahuman::COMMAND_SERVICE, &[ultrahuman::COMMAND, ultrahuman::RESPONSE]).await?.into_iter();
+        let command = found.next().flatten().context("this device has no Ultrahuman command characteristic")?;
+        let response = found.next().flatten().context("this device has no Ultrahuman response characteristic")?;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let stream = response.notify().await.context("enabling notifications failed")?;
+        let mut readers = vec![spawn_reader(stream, tx.clone(), false, None)];
+        for (service, uuid, data) in
+            [(ultrahuman::DATA_SERVICE, ultrahuman::DATA, false), (ultrahuman::STATE_SERVICE, ultrahuman::STATE, true)]
+        {
+            let Some(ch) = characteristics(device, service, &[uuid]).await?.into_iter().next().flatten() else { continue };
+            match ch.notify().await {
+                Ok(stream) => readers.push(spawn_reader(stream, tx.clone(), data, None)),
+                Err(e) => tracing::info!(error = %e, %uuid, "Ultrahuman notifications could not be enabled"),
+            }
+        }
+        let op = write_op(&command).await;
+        Ok(Self { cmd: (command, op), data: None, rx, last_send: None, readers })
     }
 
     pub fn has_data(&self) -> bool {

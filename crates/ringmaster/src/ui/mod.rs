@@ -815,6 +815,14 @@ fn set_battery(image: &gtk::Image, label: &gtk::Label, percent: u8, charging: bo
     label.set_text(&format!("{percent} %"));
 }
 
+/// A ring whose level means nothing on the charger.
+fn set_charging(image: &gtk::Image, label: &gtk::Label) {
+    let icon = "battery-good-charging-symbolic";
+    let theme = gtk::IconTheme::for_display(&image.display());
+    image.set_icon_name(Some(if theme.has_icon(icon) { icon } else { "battery-symbolic" }));
+    label.set_text("Charging");
+}
+
 /// The newer of the latest history value and the latest quick reading, and whether it is the
 /// quick reading.
 fn newest(history: Option<Reading<i64>>, quick: Option<Spot>) -> (Option<Reading<i64>>, bool) {
@@ -1146,7 +1154,10 @@ fn apply(w: &Widgets, event: Event, send: &(impl Fn(Command) + Clone + 'static))
         }
         Event::Telemetry(d) => show_telemetry(w, chrono::Utc::now().timestamp(), &d),
         Event::Battery { percent, charging } => {
-            set_battery(&w.battery_icon, &w.battery, percent, charging);
+            match percent {
+                Some(p) => set_battery(&w.battery_icon, &w.battery, p, charging),
+                None => set_charging(&w.battery_icon, &w.battery),
+            }
             w.battery_box.set_visible(w.connected.get());
         }
         Event::SyncStarted => {

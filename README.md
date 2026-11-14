@@ -77,6 +77,7 @@ collected it, and keeps about 7 days, so a ring left unsynced for over a week lo
 | Ring | Status |
 |---|---|
 | RingConn Gen 2 | Supported and tested |
+| Ultrahuman Ring AIR | New: syncs heart rate, HRV, blood oxygen, skin temperature, steps and stress, with live heart rate; no sleep estimate yet. Protocol tested with two rings (firmware 02.00.08.53 and 02.00.10.42) |
 | Colmi (R02 family) | Written from published protocol notes, not yet tried on a ring |
 | RWfit rings (RWFit app) | Not supported: BlueZ drops their connection (`docs/bluez/`) |
 

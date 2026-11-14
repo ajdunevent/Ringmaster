@@ -61,6 +61,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.5" date="2026-11-14">
+      <description>
+        <p>Adds support for Ultrahuman rings.</p>
+        <ul>
+          <li>Syncs heart rate, heart rate variability, blood oxygen, skin temperature, steps and stress from the Ultrahuman Ring AIR</li>
+          <li>Shows live heart rate from the Ultrahuman Ring AIR</li>
+          <li>Shows when a ring is charging</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.4" date="2026-11-12">
       <description>
         <p>A night shown as meeting the sleep goal now counts as meeting it, in the bar chart and in nights at goal.</p>

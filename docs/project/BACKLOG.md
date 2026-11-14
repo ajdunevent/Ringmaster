@@ -1,12 +1,12 @@
 # Ringmaster backlog
 
-Items deferred on purpose, with what they wait for. Updated 2026-11-06.
+Items deferred on purpose, with what they wait for. Updated 2026-11-14.
 
-## v0.1.0 (current)
+## Released
 
-- Publish on the project's forge (https://dev.dunevent.net/aj/Ringmaster). Not a Flathub target, so
-  screenshots are not needed. metainfo has the URLs and the 0.1.0 notes (2026-11-06); AppStream
-  allows one URL per type, so the metainfo lists Liberapay and the README lists PayPal as well.
+- 0.1.5 (2026-11-14, Ultrahuman support) on FuriHub (aarch64) and AJHub (x86_64 and aarch64).
+  The forge tags each new metainfo release, and GitHub builds it (`docs/DEVELOPMENT.md`,
+  Releasing).
 - Confirmed in daily use by 2026-11-06: connection, overnight and morning syncs, reconnection and
   battery (80 % after at least 36 hours). The link watchdog (delta 33), the stale notification
   session fix (delta 35) and 15-minute syncs left no gaps.
@@ -80,9 +80,12 @@ Items deferred on purpose, with what they wait for. Updated 2026-11-06.
   later, on the phone and on a desktop (`docs/bluez/`). Patching BlueZ is ruled out. Options: a
   report to the BlueZ developers and FuriLabs (capture and debug log in hand), or a raw ATT socket
   of Ringmaster's own, uncertain to work.
-- **Ultrahuman** (`docs/ULTRAHUMAN.md`): a `crates/ultrahuman` in the Colmi
-  pattern; 32-byte history records with heart rate, HRV, SpO2, skin temperature, steps and stress,
-  no sleep from the ring.
+- **Ultrahuman** (`crates/ultrahuman`, `docs/ULTRAHUMAN.md`, `ringprobe --ultrahuman`): supported
+  in the app (2026-11-14): pairing through the agent, clock, battery off the charger, sync by
+  record number into `samples`, `steps` and `ultrahuman_records`, live heart rate. Open: a sleep
+  estimate (needs nights; both tested rings' batteries last well under one), the meaning of
+  record kinds 7, 10 and 12 and of state bytes 1 to 4, and whether the heat of charging skews
+  the battery level (`ringprobe --ultrahuman-state` logs it).
 
 ## Official app
 

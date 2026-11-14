@@ -3,6 +3,7 @@
 
 mod colmi_ring;
 mod transport;
+mod ultrahuman_ring;
 
 use crate::settings::{Alert, Alerts, Rule, Settings, Stat};
 pub use crate::store::MeasureKind;
@@ -76,9 +77,10 @@ pub enum Event {
         result: Option<Spot>,
     },
     Summary(Box<Summary>),
-    /// Battery of a ring that reports it outside status frames.
+    /// Battery of a ring that reports it outside status frames; `None` while charging when the
+    /// ring's level is not to be trusted then.
     Battery {
-        percent: u8,
+        percent: Option<u8>,
         charging: bool,
     },
     Notify(Alert),
@@ -127,6 +129,7 @@ struct Bluetooth {
 enum Brand {
     RingConn,
     Colmi,
+    Ultrahuman,
 }
 
 struct Connected {
@@ -349,9 +352,12 @@ impl Backend {
                         self.quiet_probe = None;
                         self.on_frame(&f);
                     }
-                    Received::Data(_) => {
+                    Received::Data(d) => {
                         self.last_frame = Instant::now();
                         self.quiet_probe = None;
+                        if self.conn.as_ref().is_some_and(|c| c.brand == Brand::Ultrahuman) {
+                            self.on_ultrahuman_state(&d);
+                        }
                     }
                     Received::Closed => self.lost_connection(),
                     Received::Quiet => {}
@@ -380,7 +386,7 @@ impl Backend {
                 // The window can be showing a link that BlueZ has already dropped.
                 if self.link_alive().await {
                     let name = self.store.ring(&self.ring_address().unwrap_or_default()).ok().flatten().map(|r| r.display_name());
-                    self.emit(Event::Link(LinkState::Connected { name: name.unwrap_or_else(|| "RingConn".into()) }));
+                    self.emit(Event::Link(LinkState::Connected { name: name.unwrap_or_else(|| "Ring".into()) }));
                     return Ok(());
                 }
                 self.conn = None;
@@ -528,7 +534,7 @@ impl Backend {
         let adapter = self.bluetooth().await?.adapter.clone();
         let found = transport::scan_all(&adapter, Duration::from_secs(10), &skip).await?;
         if found.is_empty() {
-            bail!("no new ring is advertising; seat it in its case for a moment, take it out and try again");
+            bail!("no new ring is advertising; seat it in its case or on its charger for a moment, take it off and try again");
         }
         self.emit(Event::ChooseRing(self.choices(&found)));
         Ok(())
@@ -562,7 +568,8 @@ impl Backend {
             }
         }
         self.emit(Event::Link(LinkState::Searching));
-        let not_advertising = || anyhow!("the ring is not advertising; seat it in its case for a moment, take it out and try again");
+        let not_advertising =
+            || anyhow!("the ring is not advertising; seat it in its case or on its charger for a moment, take it off and try again");
         let (addr, rssi) = match target {
             Some(want) => transport::scan(&adapter, Duration::from_secs(20), Some(want)).await?.ok_or_else(not_advertising)?,
             // Taking the first ring heard could pair a stranger's ring.
@@ -594,13 +601,20 @@ impl Backend {
 
     async fn connect_to(&mut self, address: Address) -> Result<()> {
         let device = self.bluetooth().await?.adapter.device(address)?;
-        let brand = if transport::is_colmi(&device).await { Brand::Colmi } else { Brand::RingConn };
+        let brand = if transport::is_colmi(&device).await {
+            Brand::Colmi
+        } else if transport::is_ultrahuman(&device).await {
+            Brand::Ultrahuman
+        } else {
+            Brand::RingConn
+        };
 
         self.emit(Event::Link(LinkState::Connecting));
         let _ = device.set_trusted(true).await;
         transport::connect(&device).await?;
-        // Colmi rings neither bond nor authenticate.
-        if brand == Brand::RingConn && !device.is_paired().await.unwrap_or(false) {
+        // Colmi rings neither bond nor authenticate. Ultrahuman rings need a bond for their
+        // responses; the pairing agent confirms it.
+        if brand != Brand::Colmi && !device.is_paired().await.unwrap_or(false) {
             self.emit(Event::Link(LinkState::Pairing));
             transport::pair(&device).await?;
         }
@@ -609,12 +623,14 @@ impl Backend {
         let fallback = match brand {
             Brand::RingConn => "RingConn",
             Brand::Colmi => "Colmi",
+            Brand::Ultrahuman => "Ultrahuman",
         };
         let name = device.name().await.ok().flatten().unwrap_or_else(|| fallback.into());
         let (serial, firmware, hardware) = transport::device_information(&device).await;
         let stored_brand = match brand {
             Brand::RingConn => crate::store::RINGCONN,
             Brand::Colmi => crate::store::COLMI,
+            Brand::Ultrahuman => crate::store::ULTRAHUMAN,
         };
         self.store.upsert_ring(&RingInfo {
             address: address.to_string(),
@@ -638,6 +654,15 @@ impl Backend {
                 colmi_ring::greet(&mut link).await?;
                 (device, link)
             }
+            Brand::Ultrahuman => {
+                let mut link = Link::open_ultrahuman(&device).await?;
+                ultrahuman_ring::greet(&mut link).await?;
+                (device, link)
+            }
+        };
+        let first_state = match brand {
+            Brand::Ultrahuman => transport::ultrahuman_state(&device).await,
+            _ => None,
         };
 
         self.conn = Some(Connected { device, address: address.to_string(), brand, link, measurement: None });
@@ -645,6 +670,9 @@ impl Backend {
         self.last_frame = Instant::now();
         self.quiet_probe = None;
         self.emit(Event::Link(LinkState::Connected { name }));
+        if let Some(state) = first_state {
+            self.on_ultrahuman_state(&state);
+        }
         self.refresh();
         if self.window_visible {
             self.sync_on_open().await;
@@ -718,6 +746,7 @@ impl Backend {
                     let probe = match c.brand {
                         Brand::RingConn => cmd::FETCH.to_vec(),
                         Brand::Colmi => colmi::request::battery().to_vec(),
+                        Brand::Ultrahuman => vec![ultrahuman::op::CHECK_DATA],
                     };
                     let _ = c.link.send(&probe).await;
                 }
@@ -768,9 +797,10 @@ impl Backend {
     }
 
     fn on_frame(&mut self, frame: &[u8]) {
-        if self.conn.as_ref().is_some_and(|c| c.brand == Brand::Colmi) {
-            self.on_colmi_frame(frame);
-            return;
+        match self.conn.as_ref().map(|c| c.brand) {
+            Some(Brand::Colmi) => return self.on_colmi_frame(frame),
+            Some(Brand::Ultrahuman) => return self.on_ultrahuman_frame(frame),
+            _ => {}
         }
         match frame.first() {
             Some(&op::DESCRIPTOR_QUERY | &op::DESCRIPTOR_FETCH) => self.on_descriptor(frame),
@@ -825,8 +855,10 @@ impl Backend {
         if self.conn.as_ref().is_some_and(|c| c.measurement.is_some()) {
             self.finish_measure(false).await?;
         }
-        if self.conn.as_ref().is_some_and(|c| c.brand == Brand::Colmi) {
-            return self.sync_colmi().await;
+        match self.conn.as_ref().map(|c| c.brand) {
+            Some(Brand::Colmi) => return self.sync_colmi().await,
+            Some(Brand::Ultrahuman) => return self.sync_ultrahuman().await,
+            _ => {}
         }
         self.emit(Event::SyncStarted);
         // Pages arrive outside the main loop, so the quiet-link check would otherwise count a
@@ -951,6 +983,16 @@ impl Backend {
         if c.measurement.is_some() {
             return Ok(());
         }
+        if c.brand == Brand::Ultrahuman {
+            if kind == MeasureKind::Spo2 {
+                bail!("this ring has no live blood oxygen reading");
+            }
+            // An exercise is the ring's only live heart rate; the ring also keeps it in its history.
+            c.link.send(&[ultrahuman::op::EXERCISE_START]).await?;
+            c.measurement = Some(Measurement::new(kind));
+            self.emit(Event::MeasureStarted(kind));
+            return Ok(());
+        }
         if c.brand == Brand::Colmi {
             c.link.send(&colmi::live::start(colmi_kind(kind))).await?;
             c.measurement = Some(Measurement::new(kind));
@@ -1032,6 +1074,7 @@ fn live_off(brand: Brand, kind: MeasureKind) -> Vec<u8> {
     match brand {
         Brand::RingConn => cmd::LIVE_OFF.to_vec(),
         Brand::Colmi => colmi::live::stop(colmi_kind(kind)).to_vec(),
+        Brand::Ultrahuman => vec![ultrahuman::op::EXERCISE_STOP],
     }
 }
 

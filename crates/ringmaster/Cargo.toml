@@ -19,6 +19,7 @@ gio = "0.22"
 glib = "0.22"
 gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
 colmi = { path = "../colmi" }
+ultrahuman = { path = "../ultrahuman" }
 ringconn = { path = "../ringconn" }
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 tokio = { version = "1.54.0", features = ["rt-multi-thread", "macros", "sync", "time"] }

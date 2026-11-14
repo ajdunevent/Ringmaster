@@ -58,7 +58,7 @@ impl Backend {
             return;
         }
         if let Some((percent, charging)) = colmi::live::battery(frame) {
-            self.emit(Event::Battery { percent, charging });
+            self.emit(Event::Battery { percent: Some(percent), charging });
             self.alert(Stat::Battery, percent as f64, super::unix_now());
             return;
         }

@@ -41,6 +41,7 @@ one device should sync it.
 | `crates/ringconn` | RingConn protocol without I/O: framing, authentication, record decoding, the history drain state machine |
 | `crates/colmi` | Colmi protocol without I/O: packets, requests, history and big-data decoding |
 | `crates/rwfit` | RWfit protocol without I/O: recognition, both framings, record decoding |
+| `crates/ultrahuman` | Ultrahuman protocol without I/O: recognition, commands, responses, records, state |
 | `crates/ringmaster` | The app: BlueZ transport, SQLite store, backend thread, GTK window |
 | `build-aux/` | Flatpak manifest, vendored crate list and `dev.sh` |
 | `.forgejo/workflows/`, `.github/workflows/` | Tagging on the forge, building and releasing on GitHub |

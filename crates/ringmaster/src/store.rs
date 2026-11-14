@@ -151,6 +151,18 @@ CREATE TABLE sleep_stages (
 ",
     // A forgotten ring keeps its history but is never searched for.
     "ALTER TABLE rings ADD COLUMN forgotten INTEGER NOT NULL DEFAULT 0;",
+    // Ultrahuman history records as the ring sent them, for decoding and sleep work later.
+    // `unix` is the record's activity time, after dating records stamped before the clock was set.
+    "
+CREATE TABLE ultrahuman_records (
+    ring   TEXT NOT NULL,
+    unix   INTEGER NOT NULL,
+    number INTEGER NOT NULL,
+    kind   INTEGER NOT NULL,
+    raw    BLOB NOT NULL,
+    PRIMARY KEY (ring, unix, number)
+);
+",
 ];
 
 /// A night scored by the ring: start, end, and stages as (start, minutes, stage code).
@@ -159,6 +171,7 @@ pub type RingNight = (i64, i64, Vec<(i64, i64, u8)>);
 /// `rings.brand` values.
 pub const RINGCONN: &str = "ringconn";
 pub const COLMI: &str = "colmi";
+pub const ULTRAHUMAN: &str = "ultrahuman";
 
 /// `sleep_stages.stage` for time awake, as the Colmi ring numbers it.
 const STAGE_AWAKE: i64 = 5;
@@ -185,7 +198,7 @@ pub struct RingInfo {
     pub hardware: Option<String>,
     /// Set in Ringmaster; `upsert_ring` leaves it alone.
     pub nickname: Option<String>,
-    /// `RINGCONN` or `COLMI`; `None` keeps the stored value.
+    /// `RINGCONN`, `COLMI` or `ULTRAHUMAN`; `None` keeps the stored value.
     pub brand: Option<String>,
 }
 
@@ -719,6 +732,21 @@ impl Store {
 
     /// Quarter-hour step counts: (start, steps, metres). Counts for the current quarter grow, so
     /// later values replace earlier ones.
+    /// Ultrahuman records as (number, time, kind, raw bytes).
+    pub fn store_ultrahuman_records(&mut self, ring: &str, records: &[(u16, i64, u8, Vec<u8>)]) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let mut n = 0;
+        {
+            let mut stmt =
+                tx.prepare_cached("INSERT OR REPLACE INTO ultrahuman_records (ring, unix, number, kind, raw) VALUES (?1, ?2, ?3, ?4, ?5)")?;
+            for (number, unix, kind, raw) in records {
+                n += stmt.execute(params![ring, unix, number, kind, raw])?;
+            }
+        }
+        tx.commit()?;
+        Ok(n)
+    }
+
     pub fn store_steps(&mut self, ring: &str, quarters: &[(i64, i64, f64)]) -> Result<usize> {
         let tx = self.conn.transaction()?;
         let mut n = 0;
@@ -923,7 +951,9 @@ impl Store {
     /// Estimated sleep overlapping `[from, to)`. Reads half a day either side, so a night that
     /// crosses the edge keeps its true start and end.
     pub fn sleep(&self, ring: &str, from: i64, to: i64) -> Result<Vec<(i64, i64)>> {
-        if self.brand(ring)? == COLMI {
+        // Colmi rings score their own nights; Ultrahuman rings have no estimate yet, so this
+        // finds none for them.
+        if self.brand(ring)? != RINGCONN {
             let mut stmt =
                 self.conn.prepare_cached("SELECT start, end FROM ring_sleep WHERE ring = ?1 AND end > ?2 AND start < ?3 ORDER BY start")?;
             let rows = stmt.query_map(params![ring, from, to], |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -936,7 +966,7 @@ impl Store {
 
     /// Seconds of restless epochs in `[start, end)`, the wakings inside a night.
     pub fn awake(&self, ring: &str, start: i64, end: i64) -> Result<i64> {
-        if self.brand(ring)? == COLMI {
+        if self.brand(ring)? != RINGCONN {
             let minutes: i64 = self.conn.query_row(
                 "SELECT COALESCE(SUM(minutes), 0) FROM sleep_stages WHERE ring = ?1 AND start >= ?2 AND start < ?3 AND stage = ?4",
                 params![ring, start, end, STAGE_AWAKE],
@@ -1251,6 +1281,27 @@ mod tests {
         store.store_ring_sleep(ring, &[rescored]).unwrap();
         assert_eq!(store.sleep(ring, 0, 100_000).unwrap(), vec![(10_600, 38_800)]);
         assert_eq!(store.awake(ring, 10_600, 38_800).unwrap(), 20 * 60);
+    }
+
+    #[test]
+    fn ultrahuman_rings_read_samples_and_have_no_sleep_estimate() {
+        let mut store = Store::open_in_memory().unwrap();
+        let ring = "D5:ED:7E:53:79:9F";
+        let info =
+            RingInfo { address: ring.into(), name: Some("UH_D5ED7E53799F".into()), brand: Some(ULTRAHUMAN.into()), ..Default::default() };
+        store.upsert_ring(&info).unwrap();
+        assert_eq!(store.brand(ring).unwrap(), ULTRAHUMAN);
+        store.store_samples(ring, Metric::HeartRate.sample_kind(), &[(1000, 63.0)]).unwrap();
+        assert_eq!(store.summary(ring).unwrap().heart_rate.unwrap().value, 63);
+        assert_eq!(store.store_ultrahuman_records(ring, &[(36, 1000, 1, vec![0; 32])]).unwrap(), 1);
+        // Read again on the next sync: replaced, not doubled.
+        store.store_ultrahuman_records(ring, &[(36, 1000, 1, vec![1; 32])]).unwrap();
+        let n: i64 = store.conn.query_row("SELECT COUNT(*) FROM ultrahuman_records", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+        store.store_steps(ring, &[(1000, 70, 0.0)]).unwrap();
+        assert_eq!(store.steps(ring, 0, 2000).unwrap(), (70, StepSource::Ring));
+        assert!(store.sleep(ring, 0, 100_000).unwrap().is_empty());
+        assert_eq!(store.awake(ring, 0, 100_000).unwrap(), 0);
     }
 
     #[test]
