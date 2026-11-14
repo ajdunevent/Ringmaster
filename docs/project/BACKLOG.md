@@ -4,7 +4,7 @@ Items deferred on purpose, with what they wait for. Updated 2026-11-14.
 
 ## Released
 
-- 0.1.5 (2026-11-14, Ultrahuman support) on FuriHub (aarch64) and AJHub (x86_64 and aarch64).
+- 0.1.6 (2026-11-14) on FuriHub (aarch64) and AJHub (x86_64 and aarch64).
   The forge tags each new metainfo release, and GitHub builds it (`docs/DEVELOPMENT.md`,
   Releasing).
 - Confirmed in daily use by 2026-11-06: connection, overnight and morning syncs, reconnection and

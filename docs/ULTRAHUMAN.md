@@ -89,12 +89,17 @@ sync can resume from the last record number stored.
 
 7 bytes: battery percent in byte 0, state in byte 5 (`00` normal, `03` charging), ring temperature
 in byte 6. Bytes 1 to 4 are a signed 32-bit little-endian value of unknown meaning: 4,698 to
-14,097 on the charger on two rings, and 585 or -585 off it on both.
+14,097 on the charger on two rings, and at most 1,173 off it on both.
+
+Byte 5 alone does not tell that the ring is on its charger: one ring read `00`, `03` and `00`
+again within two seconds while it sat on the charger (report 10:55, 2026-11-14), with bytes 1 to
+4 at 5,874 and 4,698. Ringmaster takes the ring as charging while byte 5 is `03` or bytes 1 to 4
+are above 3,000.
 
 The battery percent cannot be trusted on the charger. A ring that read 9 % off the charger read
 100 % after about 40 minutes on it, 22 % seconds after coming off, and 6 % ten minutes later.
-Ringmaster should show "Charging" while byte 5 is `03`, and a level only from readings off the
-charger.
+Ringmaster shows "Charging" while the ring is on the charger, and a level only from readings off
+it.
 
 ## Live data (`86f66001`)
 
@@ -215,7 +220,8 @@ Supported since 2026-11-14 (`crates/ringmaster/src/backend/ultrahuman_ring.rs`):
 - **Recognition and pairing**: by the `UH_` name or the command service; the app's pairing agent
   confirms the Just Works bond the response characteristic needs.
 - **On connect**: sets the clock, reads the state once, then hears it notified. While the ring is
-  charging the battery shows as "Charging" with no level.
+  on its charger (byte 5 `03`, or bytes 1 to 4 above 3,000) the battery shows as "Charging" with
+  no level.
 - **Sync**: sets the clock again, reads the first and last record numbers, and reads from the
   last record stored. That record is read again and its time compared, so a ring whose numbers
   started over (factory reset, flat battery) is read in full. Records stamped before the clock

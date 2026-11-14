@@ -84,8 +84,14 @@ pub enum Event {
         charging: bool,
     },
     Notify(Alert),
-    /// Rings not known here that are advertising; strongest signal first.
+    /// Rings not known here that are advertising; strongest signal first. Sent when a connection
+    /// finds several and needs the user to choose.
     ChooseRing(Vec<RingChoice>),
+    /// The answer to `Command::AddRing`: new rings advertising, strongest signal first, or why the
+    /// search failed.
+    RingsFound(Result<Vec<RingChoice>, String>),
+    /// A `Command::SwitchRing` has shown the new ring; any connection follows.
+    Switched,
     Error(String),
 }
 
@@ -167,6 +173,8 @@ const MEASURE_MIN_SAMPLES: usize = 5;
 const LINK_CHECK: Duration = Duration::from_secs(5);
 /// Run 2 of 2026-10-21 saw the ring at -98 dBm and never connected; -62 dBm connected.
 const WEAK_SIGNAL: i16 = -90;
+/// How long Add Ring listens for new rings.
+pub const ADD_RING_SCAN: Duration = Duration::from_secs(10);
 
 fn median(samples: &[u8]) -> f64 {
     let mut s = samples.to_vec();
@@ -443,22 +451,12 @@ impl Backend {
             }
             Command::AddRing => self.add_ring().await,
             Command::SwitchRing(address) => {
-                if self.ring_address().as_deref() == Some(address.as_str()) {
-                    return Ok(());
+                let result = self.switch_ring(&address).await;
+                self.emit(Event::Switched);
+                if matches!(result, Ok(true)) {
+                    self.maintain().await;
                 }
-                if self.conn.as_ref().is_some_and(|c| c.measurement.is_some()) {
-                    self.finish_measure(false).await?;
-                }
-                self.disconnect().await;
-                self.store.set_default_ring(&address)?;
-                self.alerts = Alerts::default();
-                self.paused = false;
-                self.backoff = MIN_BACKOFF;
-                self.next_attempt = Instant::now();
-                self.last_sync_attempt = None;
-                self.refresh();
-                self.maintain().await;
-                Ok(())
+                result.map(|_| ())
             }
             Command::Sync => {
                 self.ensure_link().await?;
@@ -506,9 +504,27 @@ impl Backend {
                 tracing::info!(error = %e, "removing the bond failed");
             }
         }
-        self.emit(Event::Error("ring forgotten; its history stays here. Connect pairs a ring again".into()));
         self.refresh();
         Ok(())
+    }
+
+    /// Makes `address` the ring shown; `false` when it already was.
+    async fn switch_ring(&mut self, address: &str) -> Result<bool> {
+        if self.ring_address().as_deref() == Some(address) {
+            return Ok(false);
+        }
+        if self.conn.as_ref().is_some_and(|c| c.measurement.is_some()) {
+            self.finish_measure(false).await?;
+        }
+        self.disconnect().await;
+        self.store.set_default_ring(address)?;
+        self.alerts = Alerts::default();
+        self.paused = false;
+        self.backoff = MIN_BACKOFF;
+        self.next_attempt = Instant::now();
+        self.last_sync_attempt = None;
+        self.refresh();
+        Ok(true)
     }
 
     /// Rings stored here and not forgotten; a search for a new ring skips them.
@@ -529,15 +545,16 @@ impl Backend {
 
     /// Offers every new ring advertising, even a single one, since it is about to be paired.
     async fn add_ring(&mut self) -> Result<()> {
-        self.emit(Event::Error("looking for new rings for 10 seconds".into()));
+        let found = self.new_rings().await.map_err(|e| format!("{e:#}"));
+        self.emit(Event::RingsFound(found));
+        Ok(())
+    }
+
+    async fn new_rings(&mut self) -> Result<Vec<RingChoice>> {
         let skip = self.kept_rings();
         let adapter = self.bluetooth().await?.adapter.clone();
-        let found = transport::scan_all(&adapter, Duration::from_secs(10), &skip).await?;
-        if found.is_empty() {
-            bail!("no new ring is advertising; seat it in its case or on its charger for a moment, take it off and try again");
-        }
-        self.emit(Event::ChooseRing(self.choices(&found)));
-        Ok(())
+        let found = transport::scan_all(&adapter, ADD_RING_SCAN, &skip).await?;
+        Ok(self.choices(&found))
     }
 
     async fn bluetooth(&mut self) -> Result<&Bluetooth> {
@@ -1104,7 +1121,9 @@ struct Unresponsive;
 
 impl std::fmt::Display for Unresponsive {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("the ring connects but is not responding; seat it in its case for a moment and take it out to restart it")
+        f.write_str(
+            "the ring connects but is not responding; seat it in its case or on its charger for a moment and take it off to restart it",
+        )
     }
 }
 

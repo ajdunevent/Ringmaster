@@ -61,6 +61,19 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.6" date="2026-11-14">
+      <description>
+        <p>Clearer adding and switching of rings.</p>
+        <ul>
+          <li>With no ring added, the main button adds one</li>
+          <li>Adding a ring shows the search as it runs, then the rings found or why none were</li>
+          <li>Switching rings shows its progress until the new ring is ready</li>
+          <li>The charging case setting shows only for rings with a charging case</li>
+          <li>Ultrahuman rings show as charging whenever they are on the charger</li>
+          <li>Skin temperature no longer carries over from the previous ring after a switch</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.5" date="2026-11-14">
       <description>
         <p>Adds support for Ultrahuman rings.</p>

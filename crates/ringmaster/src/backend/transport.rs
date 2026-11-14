@@ -285,7 +285,7 @@ pub async fn pair(device: &Device) -> Result<()> {
         Ok(())
     } else {
         // Pairing is cancelled while the ring sits in its closed case.
-        Err(anyhow!("pairing failed; seat the ring in its case for a moment, take it out and try again"))
+        Err(anyhow!("pairing failed; seat the ring in its case or on its charger for a moment, take it off and try again"))
     }
 }
 

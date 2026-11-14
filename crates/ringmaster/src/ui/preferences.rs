@@ -8,6 +8,13 @@ use std::rc::Rc;
 /// Called after settings are saved, so the window can redraw in the new units.
 pub type OnChange = Rc<dyn Fn(&Settings)>;
 
+/// Ring actions the main window carries out, with its own dialogs.
+pub struct Hooks {
+    /// Opens the Add Ring dialog, after Preferences has closed.
+    pub add_ring: Rc<dyn Fn()>,
+    pub switch_ring: Rc<dyn Fn(String)>,
+}
+
 const NOTE: &str = "A notification is sent when its condition becomes true, and again only after the \
 condition has cleared, at most once every 30 minutes. Heart rate, HRV, blood oxygen and respiratory \
 rate arrive with each sync, so their notifications can come hours after the reading. Ringmaster is \
@@ -137,7 +144,7 @@ impl Ctx {
     }
 }
 
-pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_channel::Sender<Command>, on_change: OnChange) {
+pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_channel::Sender<Command>, hooks: Hooks, on_change: OnChange) {
     let dialog = adw::PreferencesDialog::new();
     let settings = store.settings().unwrap_or_default();
     let ctx = Rc::new(Ctx {
@@ -156,7 +163,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
     let connection = adw::PreferencesGroup::builder().title("Connection").build();
     let stay = adw::SwitchRow::builder()
         .title("Stay connected")
-        .subtitle("Keeps the link open for live battery and case status, and reconnects when it drops")
+        .subtitle("Keeps the link open for live battery status, and reconnects when it drops")
         .active(settings.stay_connected)
         .build();
     connection.add(&stay);
@@ -232,8 +239,8 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
 
     // Fills the Ring group for the selected ring.
     let show_ring = {
-        let (ctx, selected, ring, name, import, forget) =
-            (ctx.clone(), selected.clone(), ring.clone(), name.clone(), import.clone(), forget.clone());
+        let (ctx, selected, ring, name, case, import, forget) =
+            (ctx.clone(), selected.clone(), ring.clone(), name.clone(), case.clone(), import.clone(), forget.clone());
         let several = entries.len() > 1;
         move || {
             let info = selected.borrow().clone();
@@ -243,19 +250,22 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
             name.set_title(&info.as_ref().and_then(|r| r.name.clone()).unwrap_or_else(|| "Name".into()));
             name.set_text(&info.as_ref().and_then(|r| r.nickname.clone()).unwrap_or_default());
             name.set_visible(info.is_some());
-            // The import reads the RingConn app's database.
-            import.set_visible(info.as_ref().is_some_and(|r| r.brand.as_deref().is_none_or(|b| b == crate::store::RINGCONN)));
+            // Only RingConn rings have a charging case, and the import reads the RingConn app's
+            // database. Rings stored before brands were recorded are RingConn rings.
+            let ringconn = info.as_ref().is_some_and(|r| r.brand.as_deref().is_none_or(|b| b == crate::store::RINGCONN));
+            case.set_visible(ringconn);
+            import.set_visible(ringconn);
             forget.set_visible(info.is_some() && !forgotten);
         }
     };
     show_ring();
     {
-        let (ctx, selected, show_ring) = (ctx.clone(), selected.clone(), show_ring.clone());
+        let (ctx, selected, show_ring, switch_ring) = (ctx.clone(), selected.clone(), show_ring.clone(), hooks.switch_ring.clone());
         let current = known.as_ref().map(|r| r.address.clone());
         for row in super::rings::radio_rows(&entries, current.as_deref(), move |address| {
             selected.replace(ctx.store.ring(&address).ok().flatten());
             show_ring();
-            let _ = ctx.commands.try_send(Command::SwitchRing(address));
+            switch_ring(address);
         }) {
             rings.add(&row);
         }
@@ -392,10 +402,10 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         });
     }
     {
-        let ctx = ctx.clone();
+        let (ctx, add) = (ctx.clone(), hooks.add_ring.clone());
         add_ring.connect_activated(move |_| {
-            let _ = ctx.commands.try_send(Command::AddRing);
             ctx.dialog.close();
+            add();
         });
     }
     {
@@ -403,7 +413,7 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         forget_button.connect_clicked(move |_| {
             let confirm = adw::AlertDialog::new(
                 Some("Forget this ring?"),
-                Some("Ringmaster removes the pairing and stops connecting. The history stays. To use the ring again, seat it in its case or on its charger for a moment, take it off and press Connect."),
+                Some("Ringmaster removes the pairing and stops connecting. The history stays. To use the ring again, seat it in its case or on its charger for a moment, take it off and press Add Ring."),
             );
             confirm.add_responses(&[("cancel", "Cancel"), ("forget", "Forget")]);
             confirm.set_response_appearance("forget", adw::ResponseAppearance::Destructive);

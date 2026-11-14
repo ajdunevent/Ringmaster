@@ -254,7 +254,8 @@ pub struct State {
     /// Bytes 1 to 4 as a signed 32-bit value, meaning unknown: 4,698 to 14,097 on the charger on
     /// two rings, and 0, 585, -585 or 1,173 off it.
     pub current: i32,
-    /// `00` normal, `03` charging.
+    /// `00` normal, `03` charging. A ring on its charger also read `00` at times, between
+    /// readings of `03`.
     pub state: u8,
     /// The ring's own temperature, °C.
     pub temperature: u8,
@@ -270,10 +271,16 @@ impl State {
         })
     }
 
+    /// On the charger: state `03`, or bytes 1 to 4 above `ON_CHARGER`, which also covers the
+    /// readings of state `00` taken on the charger.
     pub fn charging(&self) -> bool {
-        self.state == 3
+        self.state == 3 || self.current.unsigned_abs() > ON_CHARGER
     }
 }
+
+/// Bytes 1 to 4 read 4,698 or more on the charger and at most 1,173 off it (2026-11-14, two
+/// rings).
+pub const ON_CHARGER: u32 = 3_000;
 
 /// A live heart-rate frame on the data characteristic during an exercise:
 /// `62 06 00 <time:4> <heart rate> <status>` and the response check. Frames come about every 2 s.
@@ -407,6 +414,9 @@ mod tests {
         assert_eq!((s.battery, s.current, s.charging(), s.temperature), (100, 14097, true, 37));
         let off = State::parse(&[0x06, 0xb7, 0xfd, 0xff, 0xff, 0x00, 0x20]).unwrap();
         assert_eq!((off.battery, off.current, off.charging()), (6, -585, false));
+        // On the charger with state 00, between readings of 03.
+        assert!(State::parse(&[0x64, 0x5a, 0x12, 0x00, 0x00, 0x00, 0x20]).unwrap().charging());
+        assert!(!State::parse(&[0x31, 0x95, 0x04, 0x00, 0x00, 0x00, 0x20]).unwrap().charging());
         assert_eq!(State::parse(&[80, 0]), None);
     }
 

@@ -7,8 +7,9 @@ mod pages;
 mod preferences;
 mod pull_refresh;
 mod rings;
+mod search;
 
-use crate::backend::{Command, Event, LinkState, MeasureKind, RingChoice};
+use crate::backend::{Command, Event, LinkState, MeasureKind};
 use crate::settings::{to_fahrenheit, Settings};
 use crate::store::{Metric, Reading, Spot, Stats, StepSource, Store, Summary};
 use adw::prelude::*;
@@ -20,6 +21,8 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 struct Measure {
+    /// The kind toggles, hidden for rings with only one kind of quick reading.
+    kinds: gtk::Box,
     heart_rate: gtk::ToggleButton,
     spo2: gtk::ToggleButton,
     value: gtk::Label,
@@ -96,6 +99,9 @@ struct Widgets {
     stored_case: std::cell::Cell<Option<(i64, u8, bool)>>,
     /// The night shown in the Sleep row.
     last_night: Cell<Option<(i64, i64)>>,
+    search: Rc<search::RingSearch>,
+    /// Shown from a ring switch until the backend has shown the new ring.
+    switching: Rc<RefCell<Option<adw::Dialog>>>,
 }
 
 fn value_row(title: &str, dot: Option<&str>) -> (adw::ActionRow, gtk::Label) {
@@ -293,6 +299,7 @@ pub fn build_window(
             let _ = commands.try_send(c);
         }
     };
+    let search = search::RingSearch::new(Rc::new(send.clone()));
 
     let connect = gtk::Button::builder().label("Connect").valign(gtk::Align::Center).css_classes(["suggested-action"]).build();
     let (battery_box, battery_icon, battery) = battery_indicator();
@@ -345,6 +352,7 @@ pub fn build_window(
     let (kind_box, kinds) =
         linked_toggles(&[(dots::measure(MeasureKind::HeartRate), "Heart rate"), (dots::measure(MeasureKind::Spo2), "Blood oxygen")]);
     let measure = Measure {
+        kinds: kind_box.clone(),
         heart_rate: kinds[0].clone(),
         spo2: kinds[1].clone(),
         value: gtk::Label::builder().label("–").css_classes(["title-1", "numeric"]).margin_top(6).build(),
@@ -572,6 +580,8 @@ pub fn build_window(
         history_temperature: Default::default(),
         stored_case: Default::default(),
         last_night: Default::default(),
+        search,
+        switching: Default::default(),
     });
     w.sleep.0.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
     {
@@ -603,6 +613,10 @@ pub fn build_window(
     {
         let (w, send) = (w.clone(), send.clone());
         connect.connect_clicked(move |b| {
+            if !w.connected.get() && !has_ring(&w) {
+                w.search.start(b);
+                return;
+            }
             b.set_sensitive(false);
             if !w.connected.get() {
                 w.ring_row.set_subtitle("Connecting…");
@@ -661,7 +675,7 @@ pub fn build_window(
     let w_events = w.clone();
     glib::MainContext::default().spawn_local(async move {
         while let Ok(event) = events.recv().await {
-            apply(&w_events, event, &send);
+            apply(&w_events, event);
         }
     });
 
@@ -696,10 +710,23 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
         preferences.connect_activate(move |_, _| {
             let Some(store) = w.store.clone() else { return };
             let w2 = w.clone();
+            let hooks = {
+                let (w_add, w_switch, commands) = (w.clone(), w.clone(), commands.clone());
+                preferences::Hooks {
+                    add_ring: Rc::new(move || w_add.search.start(&w_add.toasts)),
+                    switch_ring: Rc::new(move |address| {
+                        let commands = commands.clone();
+                        start_switch(&w_switch, address, move |c| {
+                            let _ = commands.try_send(c);
+                        });
+                    }),
+                }
+            };
             preferences::show(
                 &window,
                 store,
                 commands.clone(),
+                hooks,
                 Rc::new(move |settings| {
                     w2.settings.replace(settings.clone());
                     if FAHRENHEIT.replace(settings.fahrenheit) != settings.fahrenheit {
@@ -768,9 +795,16 @@ fn redraw_temperature(w: &Widgets) {
         (Some(l), Some(h)) => Some(if h.0 > l.0 { h } else { l }),
         (l, h) => l.or(h),
     };
-    if let Some((unix, celsius)) = newest {
-        w.temperature.1.set_text(&temperature_text(celsius as f32, w.settings.borrow().fahrenheit));
-        w.temperature.0.set_subtitle(&when(unix));
+    match newest {
+        Some((unix, celsius)) => {
+            w.temperature.1.set_text(&temperature_text(celsius as f32, w.settings.borrow().fahrenheit));
+            w.temperature.0.set_subtitle(&when(unix));
+        }
+        // A ring switched to with no temperature yet shows none, not the previous ring's.
+        None => {
+            w.temperature.1.set_text("–");
+            w.temperature.0.set_subtitle("");
+        }
     }
 }
 
@@ -841,7 +875,7 @@ fn show_vital(slot: &(adw::ActionRow, gtk::Label), history: Option<Reading<i64>>
 }
 
 /// Switches between the rings stored here.
-fn pick_ring(w: &Widgets, send: impl Fn(Command) + 'static) {
+fn pick_ring(w: &Rc<Widgets>, send: impl Fn(Command) + 'static) {
     let Some(store) = w.store.as_ref() else { return };
     let Some(window) = w.toasts.root().and_downcast::<gtk::Window>() else { return };
     let entries = store.rings().unwrap_or_default();
@@ -863,62 +897,58 @@ fn pick_ring(w: &Widgets, send: impl Fn(Command) + 'static) {
     dialog.add_responses(&[("cancel", "Cancel"), ("switch", "Switch")]);
     dialog.set_response_appearance("switch", adw::ResponseAppearance::Suggested);
     dialog.set_default_response(Some("switch"));
+    let w = w.clone();
     dialog.connect_response(None, move |_, response| {
         if response != "switch" {
             return;
         }
         if let Some(address) = picked.borrow().clone().filter(|a| Some(a) != current.as_ref()) {
-            send(Command::SwitchRing(address));
+            start_switch(&w, address, &send);
         }
     });
     dialog.present(Some(&window));
 }
 
-fn choose_ring(w: &Widgets, choices: Vec<RingChoice>, send: impl Fn(Command) + 'static) {
-    let Some(window) = w.toasts.root().and_downcast::<gtk::Window>() else { return };
-    let (heading, body) = match choices.len() {
-        1 => ("New ring found", "Pair it with Ringmaster? It becomes the ring shown, synced and connected."),
-        _ => ("Several rings nearby", "Choose yours. The strongest signal is usually the ring closest to this device."),
-    };
-    let dialog = adw::AlertDialog::builder().heading(heading).body(body).close_response("cancel").build();
-    let list = gtk::ListBox::builder().css_classes(["boxed-list"]).selection_mode(gtk::SelectionMode::None).build();
-    let picked: Rc<RefCell<Option<String>>> = Default::default();
-    let mut first: Option<gtk::CheckButton> = None;
-    for (i, c) in choices.iter().enumerate() {
-        let check = gtk::CheckButton::new();
-        if let Some(f) = &first {
-            check.set_group(Some(f));
-        }
-        let row = adw::ActionRow::builder()
-            .title(glib::markup_escape_text(&c.name))
-            .subtitle(format!("{} · {} dBm{}", c.address, c.rssi, if i == 0 { " · strongest" } else { "" }))
-            .activatable_widget(&check)
-            .build();
-        row.add_prefix(&check);
-        let (picked, address) = (picked.clone(), c.address.clone());
-        check.connect_toggled(move |b| {
-            if b.is_active() {
-                picked.replace(Some(address.clone()));
-            }
-        });
-        if i == 0 {
-            check.set_active(true);
-            first = Some(check);
-        }
-        list.append(&row);
+/// Asks the backend to switch rings, with a dialog that stays until the new ring is shown.
+fn start_switch(w: &Widgets, address: String, send: impl Fn(Command)) {
+    let dialog = search::busy("Switching rings…");
+    dialog.present(Some(&w.toasts));
+    if let Some(old) = w.switching.replace(Some(dialog.clone())) {
+        old.force_close();
     }
-    dialog.set_extra_child(Some(&list));
-    dialog.add_responses(&[("cancel", "Cancel"), ("pair", "Pair")]);
-    dialog.set_response_appearance("pair", adw::ResponseAppearance::Suggested);
-    dialog.set_default_response(Some("pair"));
-    dialog.connect_response(None, move |_, response| {
-        if response == "pair" {
-            if let Some(address) = picked.borrow().clone() {
-                send(Command::ConnectTo(address));
-            }
+    send(Command::SwitchRing(address));
+    // Closes it even if no answer comes.
+    let switching = w.switching.clone();
+    glib::timeout_add_local_once(SWITCH_LIMIT, move || {
+        if switching.borrow().as_ref() == Some(&dialog) {
+            end_switch(&switching);
         }
     });
-    dialog.present(Some(&window));
+}
+
+fn end_switch(switching: &RefCell<Option<adw::Dialog>>) {
+    if let Some(dialog) = switching.take() {
+        dialog.force_close();
+    }
+}
+
+const SWITCH_LIMIT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// A ring is stored here and not forgotten, so the main button connects rather than adds one.
+fn has_ring(w: &Widgets) -> bool {
+    w.store.as_ref().is_some_and(|s| s.ring_to_connect().ok().flatten().is_some())
+}
+
+fn show_connect(w: &Widgets) {
+    let (label, classes): (&str, &[&str]) = if w.connected.get() {
+        ("Disconnect", &[])
+    } else if has_ring(w) {
+        ("Connect", &["suggested-action"])
+    } else {
+        ("Add Ring", &["suggested-action"])
+    };
+    w.connect.set_label(label);
+    w.connect.set_css_classes(classes);
 }
 
 /// Shown while the ring sits in its case and reports the case's battery, or with "Always" the
@@ -1059,8 +1089,7 @@ pub(super) fn next_hour() -> i64 {
 }
 
 fn toast(w: &Widgets, text: &str) {
-    let mut chars = text.chars();
-    let text: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+    let text = search::sentence(text);
     w.toasts.add_toast(adw::Toast::builder().title(glib::markup_escape_text(&text)).timeout(5).build());
 }
 
@@ -1112,7 +1141,7 @@ fn stop_sync_pulse(w: &Widgets) {
     }
 }
 
-fn apply(w: &Widgets, event: Event, send: &(impl Fn(Command) + Clone + 'static)) {
+fn apply(w: &Widgets, event: Event) {
     match event {
         Event::Link(state) => {
             let (subtitle, connected, busy) = match &state {
@@ -1131,8 +1160,7 @@ fn apply(w: &Widgets, event: Event, send: &(impl Fn(Command) + Clone + 'static))
             if let Some(name) = w.ring_name.borrow().as_ref() {
                 w.ring_row.set_title(name);
             }
-            w.connect.set_label(if connected { "Disconnect" } else { "Connect" });
-            w.connect.set_css_classes(if connected { &[] } else { &["suggested-action"] });
+            show_connect(w);
             w.connect.set_sensitive(!busy);
             w.sync.set_sensitive(connected);
             w.measure.button.set_sensitive(connected);
@@ -1227,11 +1255,14 @@ fn apply(w: &Widgets, event: Event, send: &(impl Fn(Command) + Clone + 'static))
         }
         Event::ChooseRing(choices) => {
             w.pull.finish();
-            choose_ring(w, choices, send.clone());
+            w.search.choose(&choices, &w.toasts);
         }
+        Event::RingsFound(result) => w.search.finished(result),
+        Event::Switched => end_switch(&w.switching),
         Event::Error(e) => {
             w.pull.finish();
             w.connect.set_sensitive(true);
+            end_switch(&w.switching);
             toast(w, &e);
         }
     }
@@ -1261,7 +1292,15 @@ fn show_summary(w: &Widgets, s: &Summary) {
         if previous.as_ref() != Some(&ring.address) {
             w.history.open_latest();
         }
+        // Ultrahuman rings give live heart rate only.
+        let spo2 = ring.brand.as_deref() != Some(crate::store::ULTRAHUMAN);
+        if !spo2 && w.measure.spo2.is_active() && w.measure.active.get().is_none() {
+            w.measure.heart_rate.set_active(true);
+        }
+        w.measure.kinds.set_visible(spo2);
+        w.quick_row.set_subtitle(if spo2 { "Heart rate or blood oxygen, about 30 seconds" } else { "Heart rate, about 30 seconds" });
     }
+    show_connect(w);
     let several = w.store.as_ref().and_then(|st| st.rings().ok()).is_some_and(|r| r.len() > 1);
     w.ring_switch.set_visible(several);
     w.ring_row.set_activatable(several);
