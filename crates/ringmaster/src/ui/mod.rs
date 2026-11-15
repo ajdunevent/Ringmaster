@@ -508,6 +508,7 @@ pub fn build_window(
 
     let toolbar = adw::ToolbarView::new();
     let menu = gio::Menu::new();
+    menu.append(Some("Add Ring…"), Some("app.add-ring"));
     menu.append(Some("Preferences"), Some("app.preferences"));
     menu.append(Some("About Ringmaster"), Some("app.about"));
     menu.append(Some("Quit"), Some("app.quit"));
@@ -743,6 +744,11 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
             );
         });
     }
+    let add_ring = gio::SimpleAction::new("add-ring", None);
+    {
+        let w = w.clone();
+        add_ring.connect_activate(move |_, _| w.search.start(&w.toasts));
+    }
     let about = gio::SimpleAction::new("about", None);
     {
         let window = window.clone();
@@ -773,6 +779,7 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
             glib::timeout_add_local_once(std::time::Duration::from_millis(800), move || app.quit());
         });
     }
+    app.add_action(&add_ring);
     app.add_action(&preferences);
     app.add_action(&about);
     app.add_action(&quit);
@@ -1266,6 +1273,12 @@ fn apply(w: &Widgets, event: Event) {
         }
         Event::RingsFound(result) => w.search.finished(result),
         Event::Switched => end_switch(&w.switching),
+        Event::Adding(name) => {
+            // Nothing of the previous ring stays on show while the new one pairs.
+            show_summary(w, &Summary::default());
+            w.ring_row.set_title(&glib::markup_escape_text(&name));
+            w.ring_name.replace(Some(name));
+        }
         Event::Error(e) => {
             w.pull.finish();
             w.connect.set_sensitive(true);

@@ -92,6 +92,9 @@ pub enum Event {
     RingsFound(Result<Vec<RingChoice>, String>),
     /// A `Command::SwitchRing` has shown the new ring; any connection follows.
     Switched,
+    /// A ring chosen to add, by name, is being connected and paired; the window shows it in place
+    /// of the previous ring until a `Summary` follows.
+    Adding(String),
     Error(String),
 }
 
@@ -440,9 +443,23 @@ impl Backend {
                 self.disconnect().await;
                 self.paused = false;
                 self.backoff = MIN_BACKOFF;
+                let known = self.store.ring(&address.to_string()).ok().flatten().map(|r| r.display_name());
+                let name = match known {
+                    Some(name) => Some(name),
+                    None => match self.bluetooth().await {
+                        Ok(bluetooth) => match bluetooth.adapter.device(address) {
+                            Ok(device) => device.name().await.ok().flatten(),
+                            Err(_) => None,
+                        },
+                        Err(_) => None,
+                    },
+                };
+                self.emit(Event::Adding(name.unwrap_or_else(|| address.to_string())));
                 let result = self.connect_to(address).await;
                 if result.is_err() {
+                    // The window goes back to the ring it showed before.
                     self.emit(Event::Link(LinkState::Disconnected));
+                    self.refresh();
                 }
                 result
             }

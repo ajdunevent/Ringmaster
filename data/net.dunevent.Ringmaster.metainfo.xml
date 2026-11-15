@@ -61,6 +61,16 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.8" date="2026-11-15">
+      <description>
+        <p>Clearer adding of rings.</p>
+        <ul>
+          <li>A ring being added shows in place of the previous ring while it connects and pairs</li>
+          <li>Add Ring is in the main menu</li>
+          <li>A single ring found is shown without a check box</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.7" date="2026-11-14">
       <description>
         <p>Forgotten rings are removed from Ringmaster.</p>

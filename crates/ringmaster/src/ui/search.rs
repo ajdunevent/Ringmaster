@@ -189,6 +189,18 @@ impl RingSearch {
         self.list.remove_all();
         self.picked.replace(None);
         let mut first: Option<gtk::CheckButton> = None;
+        // A lone ring has nothing to choose between, so it gets the ring icon, not a check box.
+        if let [c] = choices {
+            let row = adw::ActionRow::builder()
+                .title(glib::markup_escape_text(&c.name))
+                .subtitle(format!("{} · {} dBm", c.address, c.rssi))
+                .build();
+            row.add_prefix(&gtk::Image::from_icon_name("ringmaster-ring-symbolic"));
+            self.list.append(&row);
+            self.picked.replace(Some(c.address.clone()));
+            self.stack.set_visible_child_name("found");
+            return;
+        }
         for (i, c) in choices.iter().enumerate() {
             let check = gtk::CheckButton::new();
             if let Some(f) = &first {
