@@ -14,6 +14,8 @@ pub struct Bar {
     /// Under the bar; only every few are drawn when bars are narrow.
     pub label: String,
     pub value: f64,
+    /// Shares of the bar from the bottom up, each with its colour; empty for one colour.
+    pub parts: Vec<(f64, (f64, f64, f64))>,
 }
 
 #[derive(Default)]
@@ -98,10 +100,26 @@ fn draw(area: &gtk::DrawingArea, cr: &cairo::Context, w: f64, h: f64, data: &Dat
         let x = LEFT + i as f64 * slot + (slot - bar) / 2.0;
         if item.value > 0.0 {
             let reached = data.goal.is_none_or(|g| item.value >= g);
-            cr.set_source_rgba(cr_, cg, cb, if reached { 1.0 } else { 0.55 });
+            let alpha = if reached { 1.0 } else { 0.55 };
             let radius = (bar / 2.0).min(3.0);
             rounded_top(cr, x, y(item.value), bar, y(0.0) - y(item.value), radius);
-            let _ = cr.fill();
+            if item.parts.is_empty() {
+                cr.set_source_rgba(cr_, cg, cb, alpha);
+                let _ = cr.fill();
+            } else {
+                // Each share in its colour, inside the bar's outline, a pixel apart.
+                let _ = cr.save();
+                cr.clip();
+                let mut bottom = y(0.0);
+                for (share, (pr, pg, pb)) in &item.parts {
+                    let height = share * (y(0.0) - y(item.value));
+                    cr.set_source_rgba(*pr, *pg, *pb, alpha);
+                    cr.rectangle(x, bottom - height + 1.0, bar, (height - 1.0).max(0.0));
+                    let _ = cr.fill();
+                    bottom -= height;
+                }
+                let _ = cr.restore();
+            }
         }
     }
     // Labels spaced to stay at least 24 px apart, counted back from the newest bar.

@@ -61,6 +61,20 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.9" date="2026-11-18">
+      <description>
+        <p>Sleep stages and a profile.</p>
+        <ul>
+          <li>Deep sleep, REM, light sleep and time awake are estimated for RingConn rings, from heart rate, HRV, breathing and movement</li>
+          <li>The Sleep page splits each night by stage and shows last night in detail, compared with your usual nights</li>
+          <li>Nights whose heart rate never settles are marked as restless</li>
+          <li>A Profile page in Preferences keeps an optional birth year, reference ranges, height and weight</li>
+          <li>Sleep durations are shown in hours and minutes</li>
+          <li>Preferences mark a value they cannot use on its row instead of in a notification</li>
+          <li>Skin temperature in History is compared with your usual correctly in Fahrenheit</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.8" date="2026-11-15">
       <description>
         <p>Clearer adding of rings.</p>

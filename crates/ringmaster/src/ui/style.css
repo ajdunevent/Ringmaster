@@ -20,3 +20,8 @@
 /* Stacked, the lower row joins the row above it. */
 .stacked > box:last-child > button { border-top-left-radius: 0; border-top-right-radius: 0; }
 .sync-bar trough, .sync-bar trough > progress { min-height: 28px; border-radius: 6px; }
+/* Sleep stages; the same colours are drawn in ui/staging.rs. */
+.stage-deep { color: #5e4fd6; }
+.stage-rem { color: #1c9e8f; }
+.stage-light { color: #b8aff0; }
+.stage-awake { color: #e5a50a; }

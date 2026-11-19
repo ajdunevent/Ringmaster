@@ -208,6 +208,20 @@ impl RingInfo {
     }
 }
 
+/// A worn epoch as the sleep stager reads it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct NightEpoch {
+    pub unix: i64,
+    pub hr: Option<f64>,
+    pub hrv: Option<f64>,
+    /// Breaths per minute.
+    pub rr: Option<f64>,
+    /// Every 30-second motion count at the sensor's floor.
+    pub still: bool,
+    /// Past the restless mark (`crate::sleep::restless`).
+    pub restless: bool,
+}
+
 /// A ring as listed in Preferences.
 #[derive(Debug, Clone)]
 pub struct RingEntry {
@@ -936,6 +950,26 @@ impl Store {
             // The five 30-second motion counts rest at 1 when the hand is still.
             let still = raw.get(10..15).is_some_and(|m| m.iter().all(|c| *c <= 1));
             Ok(crate::sleep::Activity { unix: r.get(0)?, still, pulse: r.get(3)?, confidence: r.get(1)? })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Worn epochs in `[from, to)` as the sleep stager reads them, oldest first.
+    pub fn night_epochs(&self, ring: &str, from: i64, to: i64) -> Result<Vec<NightEpoch>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT unix, heart_rate, hrv, resp_rate, raw FROM epochs
+             WHERE ring = ?1 AND unix >= ?2 AND unix < ?3 AND layout != 'idle' ORDER BY unix",
+        )?;
+        let rows = stmt.query_map(params![ring, from, to], |r| {
+            let raw: Vec<u8> = r.get(4)?;
+            Ok(NightEpoch {
+                unix: r.get(0)?,
+                hr: r.get(1)?,
+                hrv: r.get(2)?,
+                rr: r.get(3)?,
+                still: raw.get(10..15).is_some_and(|m| m.iter().all(|c| *c <= 1)),
+                restless: crate::sleep::restless(&raw),
+            })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }

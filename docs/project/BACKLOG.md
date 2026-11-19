@@ -1,10 +1,10 @@
 # Ringmaster backlog
 
-Items deferred on purpose, with what they wait for. Updated 2026-11-15.
+Items deferred on purpose, with what they wait for. Updated 2026-11-18.
 
 ## Released
 
-- 0.1.8 (2026-11-15) on FuriHub (aarch64) and AJHub (x86_64 and aarch64).
+- 0.1.9 (2026-11-18) on FuriHub (aarch64) and AJHub (x86_64 and aarch64).
   The forge tags each new metainfo release, and GitHub builds it (`docs/DEVELOPMENT.md`,
   Releasing).
 - Confirmed in daily use by 2026-11-06: connection, overnight and morning syncs, reconnection and
@@ -15,9 +15,16 @@ Items deferred on purpose, with what they wait for. Updated 2026-11-15.
 
 - **Tabs** (done 2026-11-06): Latest, History, Sleep (nights against the goal over 2 or 4 weeks,
   averages, a list opening each night in History) and Activity (daily steps the same way). Next for
-  Sleep: restful and restless periods across a night, oxygen 3 or more points below the night's
-  usual, stages and apnea when ready. Sleep duration stays time asleep (the window less restless
-  epochs).
+  Sleep: oxygen 3 or more points below the night's usual, and apnea when ready. Sleep duration
+  stays time asleep (the window less restless epochs).
+- **Sleep stages** (2026-11-18, `docs/SLEEP.md`): estimated from the signs sleep research
+  describes, with fixed settings aimed at published adult shares; shown as split bars, a Last
+  night card, History rows and a restless-night note. RingConn only. Open: Colmi's own stages in
+  the same views; Ultrahuman once its records give enough per night.
+- **Profile** (2026-11-18): birth year, reference ranges, height and weight in Preferences, all
+  optional. Nothing reads them yet: the stage shares do not change with age or sex under current
+  scoring (Boulos et al. 2019). Next users: distance from steps, energy, age ranges for heart rate
+  and HRV.
 - **Workouts**: the Gen 2 sport channel `02` is unconfirmed and the official app cannot be
   captured (it needs SafetyNet), so detection from heart rate and movement is the route; it needs
   labelled workouts to tune against before it goes on the Activity tab.
@@ -52,8 +59,9 @@ Items deferred on purpose, with what they wait for. Updated 2026-11-15.
 
 ### Sleep stages
 
-- The rule-based stager agrees with the official app's 158 imported nights 80 % of the time
-  (kappa 0.68). Which early blocks are deep is unexplained by stored data; skin temperature is the
+- The app's stager follows the literature, not the official app (`docs/SLEEP.md`); it agrees with
+  the app on about half of all epochs. An earlier rule-based stager fitted to the app agreed with
+  its 158 imported nights 80 % of the time (kappa 0.68). Which early blocks are deep is unexplained by stored data; skin temperature is the
   main suspect, and the imported nights have none.
 - The official app 4.x stages on-device with an ExecuTorch model taking raw PPG in the published
   SleepPPG-Net format (1200 windows of 1024 samples at 34.13 Hz, four classes). The model is the

@@ -3,6 +3,7 @@ mod backend;
 mod import;
 mod settings;
 mod sleep;
+mod stages;
 mod store;
 mod ui;
 

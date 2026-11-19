@@ -16,6 +16,103 @@ pub struct Settings {
     pub sleep_goal_minutes: u32,
     /// Show the charging case's last known battery even when the ring is out of the case.
     pub case_always: bool,
+    pub profile: Profile,
+    /// Height in inches and weight in lb, rather than cm and kg.
+    pub us_body_units: bool,
+}
+
+/// Optional details that pick the published figures readings are compared with. Each is
+/// `None` until set; calculations then use figures for adults in general.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Profile {
+    pub birth_year: Option<u16>,
+    pub reference: Reference,
+    pub height_cm: Option<f64>,
+    pub weight_kg: Option<f64>,
+}
+
+/// Which published reference ranges readings are compared with. It only chooses figures:
+/// no wording or anything else in the app depends on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Reference {
+    #[default]
+    AllAdults,
+    Female,
+    Male,
+}
+
+impl Reference {
+    pub const ALL: [Reference; 3] = [Reference::AllAdults, Reference::Female, Reference::Male];
+
+    fn key(self) -> &'static str {
+        match self {
+            Reference::AllAdults => "all",
+            Reference::Female => "female",
+            Reference::Male => "male",
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Reference::AllAdults => "All adults",
+            Reference::Female => "Female ranges",
+            Reference::Male => "Male ranges",
+        }
+    }
+}
+
+pub const BIRTH_YEAR_FIRST: u16 = 1900;
+pub const HEIGHT_RANGE_CM: std::ops::RangeInclusive<f64> = 50.0..=250.0;
+pub const WEIGHT_RANGE_KG: std::ops::RangeInclusive<f64> = 20.0..=350.0;
+const CM_PER_INCH: f64 = 2.54;
+const KG_PER_POUND: f64 = 0.453_592_37;
+
+/// A birth year from `text`: `Ok(None)` for empty text, `Err` for anything outside
+/// `BIRTH_YEAR_FIRST` to `this_year`.
+pub fn parse_birth_year(text: &str, this_year: u16) -> Result<Option<u16>, ()> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    text.parse().ok().filter(|y| (BIRTH_YEAR_FIRST..=this_year).contains(y)).map(Some).ok_or(())
+}
+
+/// A height in cm from `text`, read as inches with US units.
+pub fn parse_height(text: &str, us: bool) -> Result<Option<f64>, ()> {
+    let text = text.trim().trim_end_matches(|c: char| c.is_alphabetic() || c == ' ' || c == '"');
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let n: f64 = text.replace(',', ".").parse().map_err(|_| ())?;
+    let cm = if us { n * CM_PER_INCH } else { n };
+    HEIGHT_RANGE_CM.contains(&cm).then_some(Some(cm)).ok_or(())
+}
+
+pub fn height_text(cm: f64, us: bool) -> String {
+    if us {
+        format!("{:.0}", cm / CM_PER_INCH)
+    } else {
+        format!("{cm:.0}")
+    }
+}
+
+/// A weight in kg from `text`, read as lb with US units.
+pub fn parse_weight(text: &str, us: bool) -> Result<Option<f64>, ()> {
+    let text = text.trim().trim_end_matches(|c: char| c.is_alphabetic() || c == ' ');
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let n: f64 = text.replace(',', ".").parse().map_err(|_| ())?;
+    let kg = if us { n * KG_PER_POUND } else { n };
+    WEIGHT_RANGE_KG.contains(&kg).then_some(Some(kg)).ok_or(())
+}
+
+pub fn weight_text(kg: f64, us: bool) -> String {
+    if us {
+        format!("{:.0}", kg / KG_PER_POUND)
+    } else {
+        format!("{kg:.1}").trim_end_matches(".0").to_string()
+    }
 }
 
 impl Default for Settings {
@@ -30,6 +127,8 @@ impl Default for Settings {
             step_goal: 10_000,
             sleep_goal_minutes: 8 * 60,
             case_always: false,
+            profile: Profile::default(),
+            us_body_units: false,
         }
     }
 }
@@ -62,6 +161,11 @@ impl Settings {
             ("step_goal", self.step_goal.to_string()),
             ("sleep_goal_minutes", self.sleep_goal_minutes.to_string()),
             ("case_battery_always", flag(self.case_always)),
+            ("birth_year", self.profile.birth_year.map_or(String::new(), |y| y.to_string())),
+            ("reference_ranges", self.profile.reference.key().into()),
+            ("height_cm", self.profile.height_cm.map_or(String::new(), |v| format!("{v:.1}"))),
+            ("weight_kg", self.profile.weight_kg.map_or(String::new(), |v| format!("{v:.2}"))),
+            ("us_body_units", flag(self.us_body_units)),
         ]
     }
 
@@ -75,6 +179,11 @@ impl Settings {
         s.start_at_login = b("start_at_login", s.start_at_login);
         s.fahrenheit = b("fahrenheit", s.fahrenheit);
         s.case_always = b("case_battery_always", s.case_always);
+        s.us_body_units = b("us_body_units", s.us_body_units);
+        s.profile.birth_year = get("birth_year").and_then(|v| v.parse().ok()).filter(|y| *y >= BIRTH_YEAR_FIRST);
+        s.profile.reference = get("reference_ranges").and_then(|v| Reference::ALL.into_iter().find(|r| r.key() == v)).unwrap_or_default();
+        s.profile.height_cm = get("height_cm").and_then(|v| v.parse().ok()).filter(|v| HEIGHT_RANGE_CM.contains(v));
+        s.profile.weight_kg = get("weight_kg").and_then(|v| v.parse().ok()).filter(|v| WEIGHT_RANGE_KG.contains(v));
         if let Some(goal) = get("step_goal").and_then(|v| v.parse().ok()).filter(|g| STEP_GOAL_RANGE.contains(g)) {
             s.step_goal = goal;
         }
@@ -317,11 +426,37 @@ mod tests {
             step_goal: 8000,
             sleep_goal_minutes: 450,
             case_always: true,
+            profile: Profile { birth_year: Some(1981), reference: Reference::Female, height_cm: Some(177.8), weight_kg: Some(81.25) },
+            us_body_units: true,
             ..Default::default()
         };
         let pairs = s.to_pairs().into_iter().map(|(k, v)| (k.to_string(), v)).collect();
         assert_eq!(Settings::from_pairs(&pairs), s);
         assert_eq!(Settings::from_pairs(&HashMap::new()), Settings::default());
+    }
+
+    #[test]
+    fn profile_entries() {
+        assert_eq!(parse_birth_year("", 2026), Ok(None));
+        assert_eq!(parse_birth_year(" 1981 ", 2026), Ok(Some(1981)));
+        assert!(parse_birth_year("2027", 2026).is_err() && parse_birth_year("1899", 2026).is_err());
+
+        let cm = |t: &str, us| parse_height(t, us).unwrap().map(|v| (v * 10.0).round() / 10.0);
+        assert_eq!(cm("", true), None);
+        assert_eq!(cm("178", false), Some(178.0));
+        for text in ["70", "70 in", "70\""] {
+            assert_eq!(cm(text, true), Some(177.8), "{text}");
+        }
+        assert!(parse_height("5 10", true).is_err() && parse_height("6", true).is_err() && parse_height("30", false).is_err());
+        assert_eq!(height_text(177.8, true), "70");
+        assert_eq!(height_text(177.8, false), "178");
+
+        let kg = |t: &str, us| parse_weight(t, us).unwrap().map(|v| (v * 10.0).round() / 10.0);
+        assert_eq!(kg("180 lb", true), Some(81.6));
+        assert_eq!(kg("81,5", false), Some(81.5));
+        assert!(parse_weight("5", false).is_err());
+        assert_eq!(weight_text(81.65, true), "180");
+        assert_eq!(weight_text(80.0, false), "80");
     }
 
     #[test]

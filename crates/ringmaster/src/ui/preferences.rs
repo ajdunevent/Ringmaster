@@ -1,5 +1,8 @@
 use crate::backend::Command;
-use crate::settings::{to_celsius, to_fahrenheit, Op, Rule, Settings, Stat, SLEEP_GOAL_RANGE, STEP_GOAL_RANGE, SYNC_INTERVALS};
+use crate::settings::{
+    height_text, parse_birth_year, parse_height, parse_weight, to_celsius, to_fahrenheit, weight_text, Op, Reference, Rule, Settings, Stat,
+    BIRTH_YEAR_FIRST, SLEEP_GOAL_RANGE, STEP_GOAL_RANGE, SYNC_INTERVALS,
+};
 use crate::store::{RingInfo, Store};
 use adw::prelude::*;
 use std::cell::{Cell, RefCell};
@@ -15,6 +18,35 @@ pub struct Hooks {
     pub switch_ring: Rc<dyn Fn(String)>,
 }
 
+fn height_title(us: bool) -> &'static str {
+    if us {
+        "Height (in)"
+    } else {
+        "Height (cm)"
+    }
+}
+
+fn weight_title(us: bool) -> &'static str {
+    if us {
+        "Weight (lb)"
+    } else {
+        "Weight (kg)"
+    }
+}
+
+/// Marks an entry whose value was refused, and says in the row's own title what it takes.
+fn flag_entry(row: &adw::EntryRow, hint: &str) {
+    row.add_css_class("error");
+    row.set_title(hint);
+}
+
+fn clear_entry(row: &adw::EntryRow, title: &str) {
+    row.remove_css_class("error");
+    row.set_title(title);
+}
+
+const PROFILE_NOTE: &str = "All optional, and kept on this device. Reference ranges choose which published health figures \
+                            your readings are compared with: pick whichever fits your body best, or keep All adults.";
 const NOTE: &str = "A notification is sent when its condition becomes true, and again only after the \
 condition has cleared, at most once every 30 minutes. Heart rate, HRV, blood oxygen and respiratory \
 rate arrive with each sync, so their notifications can come hours after the reading. Ringmaster is \
@@ -32,20 +64,24 @@ fn import_subtitle(store: &Store) -> String {
     }
 }
 
-/// Hours, with a decimal point or comma, as minutes.
+/// Minutes from "7h 30m", "7h", "45m", "7:30", or hours with a decimal point or comma.
 fn parse_sleep_goal(text: &str) -> Option<u32> {
-    let hours: f64 = text.trim().replace(',', ".").parse().ok()?;
-    let minutes = (hours * 60.0).round();
+    let text = text.trim().to_lowercase().replace(' ', "");
+    let minutes = if let Some((h, m)) = text.split_once(':') {
+        h.parse::<f64>().ok()? * 60.0 + m.parse::<f64>().ok()?
+    } else if text.ends_with('h') || text.ends_with('m') {
+        let (h, rest) = text.split_once('h').unwrap_or(("0", text.as_str()));
+        let m = rest.strip_suffix('m').unwrap_or(rest);
+        h.parse::<f64>().ok()? * 60.0 + if m.is_empty() { 0.0 } else { m.parse::<f64>().ok()? }
+    } else {
+        text.replace(',', ".").parse::<f64>().ok()? * 60.0
+    };
+    let minutes = minutes.round();
     (minutes.is_finite() && minutes >= 0.0).then_some(minutes as u32).filter(|m| SLEEP_GOAL_RANGE.contains(m))
 }
 
 fn sleep_goal_text(minutes: u32) -> String {
-    let hours = minutes as f64 / 60.0;
-    if minutes.is_multiple_of(60) {
-        format!("{hours:.0}")
-    } else {
-        format!("{hours:.2}").trim_end_matches('0').to_string()
-    }
+    super::duration(minutes as i64 * 60)
 }
 
 fn parse_step_goal(text: &str) -> Option<u32> {
@@ -192,6 +228,43 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         .selected(settings.fahrenheit as u32)
         .build();
     units.add(&temperature);
+    let body_units = adw::ComboRow::builder()
+        .title("Height and weight")
+        .model(&gtk::StringList::new(&["cm and kg", "in and lb"]))
+        .selected(settings.us_body_units as u32)
+        .build();
+    units.add(&body_units);
+
+    let profile = adw::PreferencesGroup::builder().title("Profile").description(PROFILE_NOTE).build();
+    let birth_year = adw::EntryRow::builder()
+        .title("Birth year")
+        .text(settings.profile.birth_year.map_or(String::new(), |y| y.to_string()))
+        .input_purpose(gtk::InputPurpose::Digits)
+        .show_apply_button(true)
+        .build();
+    profile.add(&birth_year);
+    let labels: Vec<&str> = Reference::ALL.iter().map(|r| r.label()).collect();
+    let reference = adw::ComboRow::builder()
+        .title("Reference ranges")
+        .model(&gtk::StringList::new(&labels))
+        .selected(Reference::ALL.iter().position(|r| *r == settings.profile.reference).unwrap_or(0) as u32)
+        .build();
+    profile.add(&reference);
+    let height = adw::EntryRow::builder().input_purpose(gtk::InputPurpose::Number).show_apply_button(true).build();
+    let weight = adw::EntryRow::builder().input_purpose(gtk::InputPurpose::Number).show_apply_button(true).build();
+    let show_body = {
+        let (height, weight) = (height.clone(), weight.clone());
+        move |settings: &Settings| {
+            let us = settings.us_body_units;
+            clear_entry(&height, height_title(us));
+            clear_entry(&weight, weight_title(us));
+            height.set_text(&settings.profile.height_cm.map_or(String::new(), |v| height_text(v, us)));
+            weight.set_text(&settings.profile.weight_kg.map_or(String::new(), |v| weight_text(v, us)));
+        }
+    };
+    show_body(&settings);
+    profile.add(&height);
+    profile.add(&weight);
 
     let goals = adw::PreferencesGroup::builder().title("Goals").build();
     let step_goal = adw::EntryRow::builder()
@@ -202,12 +275,8 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         .build();
     step_goal.add_prefix(&super::dots::dot(super::dots::STEPS));
     goals.add(&step_goal);
-    let sleep_goal = adw::EntryRow::builder()
-        .title("Sleep duration (hrs)")
-        .text(sleep_goal_text(settings.sleep_goal_minutes))
-        .input_purpose(gtk::InputPurpose::Number)
-        .show_apply_button(true)
-        .build();
+    let sleep_goal =
+        adw::EntryRow::builder().title("Sleep duration").text(sleep_goal_text(settings.sleep_goal_minutes)).show_apply_button(true).build();
     sleep_goal.add_prefix(&super::dots::dot("metric-sleep"));
     goals.add(&sleep_goal);
 
@@ -285,7 +354,10 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
     alerts.add(&ctx.rules_group);
     rebuild_rules(&ctx);
 
-    for page in [&hardware, &general, &alerts] {
+    let you = adw::PreferencesPage::builder().title("Profile").icon_name("avatar-default-symbolic").build();
+    you.add(&profile);
+
+    for page in [&hardware, &general, &you, &alerts] {
         dialog.add(page);
     }
 
@@ -359,15 +431,77 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
     }
     {
         let ctx = ctx.clone();
+        body_units.connect_selected_notify(move |r| {
+            ctx.settings.borrow_mut().us_body_units = r.selected() == 1;
+            ctx.save();
+            show_body(&ctx.settings.borrow());
+        });
+    }
+    {
+        let ctx = ctx.clone();
+        reference.connect_selected_notify(move |r| {
+            ctx.settings.borrow_mut().profile.reference = Reference::ALL.get(r.selected() as usize).copied().unwrap_or_default();
+            ctx.save();
+        });
+    }
+    {
+        let ctx = ctx.clone();
+        birth_year.connect_apply(move |row| {
+            let this_year = chrono::Datelike::year(&chrono::Local::now()) as u16;
+            match parse_birth_year(&row.text(), this_year) {
+                Ok(year) => {
+                    clear_entry(row, "Birth year");
+                    ctx.settings.borrow_mut().profile.birth_year = year;
+                    ctx.save();
+                }
+                Err(()) => {
+                    flag_entry(row, &format!("Birth year: {BIRTH_YEAR_FIRST} to {this_year}, or empty"));
+                }
+            }
+        });
+    }
+    {
+        let ctx = ctx.clone();
+        height.connect_apply(move |row| {
+            let us = ctx.settings.borrow().us_body_units;
+            match parse_height(&row.text(), us) {
+                Ok(cm) => {
+                    clear_entry(row, height_title(us));
+                    ctx.settings.borrow_mut().profile.height_cm = cm;
+                    ctx.save();
+                }
+                Err(()) => {
+                    flag_entry(row, if us { "Height: 20 to 98 in" } else { "Height: 50 to 250 cm" });
+                }
+            }
+        });
+    }
+    {
+        let ctx = ctx.clone();
+        weight.connect_apply(move |row| {
+            let us = ctx.settings.borrow().us_body_units;
+            match parse_weight(&row.text(), us) {
+                Ok(kg) => {
+                    clear_entry(row, weight_title(us));
+                    ctx.settings.borrow_mut().profile.weight_kg = kg;
+                    ctx.save();
+                }
+                Err(()) => {
+                    flag_entry(row, if us { "Weight: 45 to 770 lb" } else { "Weight: 20 to 350 kg" });
+                }
+            }
+        });
+    }
+    {
+        let ctx = ctx.clone();
         step_goal.connect_apply(move |row| match parse_step_goal(&row.text()) {
             Some(goal) => {
-                row.remove_css_class("error");
+                clear_entry(row, "Daily steps");
                 ctx.settings.borrow_mut().step_goal = goal;
                 ctx.save();
             }
             None => {
-                row.add_css_class("error");
-                ctx.toast(&format!("Enter a whole number from {} to {}", STEP_GOAL_RANGE.start(), STEP_GOAL_RANGE.end()));
+                flag_entry(row, &format!("Daily steps: {} to {}", STEP_GOAL_RANGE.start(), STEP_GOAL_RANGE.end()));
             }
         });
     }
@@ -375,13 +509,15 @@ pub fn show(parent: &impl IsA<gtk::Widget>, store: Rc<Store>, commands: async_ch
         let ctx = ctx.clone();
         sleep_goal.connect_apply(move |row| match parse_sleep_goal(&row.text()) {
             Some(goal) => {
-                row.remove_css_class("error");
+                clear_entry(row, "Sleep duration");
                 ctx.settings.borrow_mut().sleep_goal_minutes = goal;
                 ctx.save();
             }
             None => {
-                row.add_css_class("error");
-                ctx.toast(&format!("Enter {} to {} hours", SLEEP_GOAL_RANGE.start() / 60, SLEEP_GOAL_RANGE.end() / 60));
+                flag_entry(
+                    row,
+                    &format!("Sleep duration: {}h to {}h, such as 7h 30m", SLEEP_GOAL_RANGE.start() / 60, SLEEP_GOAL_RANGE.end() / 60),
+                );
             }
         });
     }
@@ -623,7 +759,12 @@ mod tests {
         assert_eq!(parse_sleep_goal(" 7,5 "), Some(450));
         assert_eq!(parse_sleep_goal("2"), None);
         assert_eq!(parse_sleep_goal("eight"), None);
-        assert_eq!((sleep_goal_text(480), sleep_goal_text(450), sleep_goal_text(465)), ("8".into(), "7.5".into(), "7.75".into()));
+        assert_eq!(parse_sleep_goal("7h 30m"), Some(450));
+        assert_eq!(parse_sleep_goal("7H30M"), Some(450));
+        assert_eq!(parse_sleep_goal("7h"), Some(420));
+        assert_eq!(parse_sleep_goal("7:45"), Some(465));
+        assert_eq!(parse_sleep_goal("400m"), Some(400));
+        assert_eq!((sleep_goal_text(480), sleep_goal_text(450), sleep_goal_text(465)), ("8h 00m".into(), "7h 30m".into(), "7h 45m".into()));
     }
 
     #[test]

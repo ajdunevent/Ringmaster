@@ -50,7 +50,7 @@ struct Inner {
     ring: Rc<RefCell<Option<String>>>,
     calendar: MonthCalendar,
     day_group: adw::PreferencesGroup,
-    day_rows: RefCell<Vec<adw::ActionRow>>,
+    day_rows: RefCell<Vec<adw::PreferencesRow>>,
     part: Cell<DayPart>,
     from_row: DatePick,
     to_row: DatePick,
@@ -99,8 +99,9 @@ fn sleep_detail(store: &Store, ring: &str, metric: Metric, points: &[(i64, f64)]
         }
         Metric::SkinTemp => match store.usual_skin_temp(ring, start).ok().flatten() {
             Some(usual) => {
-                let (scale, unit) = if super::FAHRENHEIT.get() { (9.0 / 5.0, "°F") } else { (1.0, "°C") };
-                match (mean - usual) * scale {
+                // `mean` is in the units shown; the usual is stored in degrees Celsius.
+                let (usual, unit) = if super::FAHRENHEIT.get() { (crate::settings::to_fahrenheit(usual), "°F") } else { (usual, "°C") };
+                match mean - usual {
                     d if d.abs() < 0.05 => " · As usual".into(),
                     d if d > 0.0 => format!(" · {d:.1} {unit} above usual"),
                     d => format!(" · {:.1} {unit} below usual", -d),
@@ -373,7 +374,22 @@ impl HistoryPage {
             let total: i64 = own.iter().map(|(a, b)| b - a).sum();
             let at = |u: i64| Local.timestamp_opt(u, 0).single().map(|t| t.format("%H:%M").to_string()).unwrap_or_default();
             let awake: i64 = own.iter().map(|(a, b)| store.awake(&ring, *a, *b).unwrap_or(0)).sum();
-            rows.push(row("metric-sleep", "Sleep", &super::duration(total - awake), &super::sleep_subtitle(&own, awake, at)));
+            let (value, subtitle) = (super::duration(total - awake), super::sleep_subtitle(&own, awake, at));
+            // The night's stages, when they can be estimated: a strip under the Sleep row for the
+            // whole day, the stage chart and a row per stage for sleep alone.
+            let night = crate::stages::nights(&store, &ring, from, to).ok().and_then(|mut n| n.remove(&day));
+            match (&night, part) {
+                (Some(n), DayPart::Full) => rows.push(super::staging::strip_row(&value, &subtitle, &n.minutes)),
+                (Some(n), _) => {
+                    rows.push(row("metric-sleep", "Sleep", &value, &subtitle).upcast());
+                    if let Some(text) = super::staging::unsettled_text(n) {
+                        rows.push(super::staging::unsettled_row(&text));
+                    }
+                    rows.push(super::staging::chart_row(n));
+                    rows.extend(super::staging::rows(n));
+                }
+                (None, _) => rows.push(row("metric-sleep", "Sleep", &value, &subtitle).upcast()),
+            }
         }
         for metric in Metric::ALL {
             let points = series(metric);
@@ -388,21 +404,15 @@ impl HistoryPage {
             if part == DayPart::Asleep {
                 detail.push_str(&sleep_detail(&store, &ring, metric, &points, start, s.mean));
             }
-            rows.push(row(
-                dots::metric(metric),
-                metric.name(),
-                &format!("{:.*} {}", precision, s.mean, super::metric_unit(metric)),
-                &detail,
-            ));
+            rows.push(
+                row(dots::metric(metric), metric.name(), &format!("{:.*} {}", precision, s.mean, super::metric_unit(metric)), &detail)
+                    .upcast(),
+            );
         }
         if part == DayPart::Full {
-            if let Ok((steps, source)) = store.steps(&ring, from, to) {
+            if let Ok((steps, _)) = store.steps(&ring, from, to) {
                 if steps > 0 {
-                    let note = match source {
-                        crate::store::StepSource::Ring => "",
-                        crate::store::StepSource::Connected => "Counted while connected",
-                    };
-                    rows.push(row(dots::STEPS, "Steps", &steps.to_string(), note));
+                    rows.push(row(dots::STEPS, "Steps", &steps.to_string(), "").upcast());
                 }
             }
         }
@@ -411,7 +421,7 @@ impl HistoryPage {
         }
         if rows.is_empty() {
             let empty = if part == DayPart::Asleep { "No sleep estimated" } else { "No readings" };
-            rows.push(adw::ActionRow::builder().title(empty).build());
+            rows.push(adw::ActionRow::builder().title(empty).build().upcast());
         }
         for r in &rows {
             inner.day_group.add(r);

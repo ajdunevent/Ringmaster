@@ -31,16 +31,22 @@ Tested on a RingConn Gen 2 (firmware FR02.018) with a FuriLabs FLX1s running Fur
 
 - A month calendar marking what was recorded each day
 - Each day's averages, lows and highs, split into the whole day, awake time or sleep
-- A Sleep view for each night: time asleep less wakings, time below 90 % blood oxygen, and skin
-  temperature against your usual
+- A Sleep view for each night: time asleep less wakings, its sleep stages against your usual,
+  time below 90 % blood oxygen, and skin temperature against your usual
 - Charts of every stream over any range of dates
 
 **Sleep**: your nights over the past two or four weeks.
 
-- Time asleep each night against your goal
-- Average time asleep, when you usually fall asleep and wake up, and how many nights reached the
-  goal
+- Time asleep each night against your goal, split into deep sleep, REM and light sleep
+- Last night's stages in detail, against your usual nights, with nights that never settled marked
+  as restless
+- Average time asleep, deep sleep and REM, when you usually fall asleep and wake up, and how many
+  nights reached the goal
 - Every night listed, opening in History
+
+Sleep stages are estimated from heart rate, HRV, breathing and movement, following the patterns
+described in sleep research ([docs/SLEEP.md](docs/SLEEP.md)). They are not a medical measurement.
+Stages need a RingConn ring.
 
 **Activity**: your steps over the past two or four weeks.
 

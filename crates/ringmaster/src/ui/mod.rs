@@ -8,10 +8,11 @@ mod preferences;
 mod pull_refresh;
 mod rings;
 mod search;
+mod staging;
 
 use crate::backend::{Command, Event, LinkState, MeasureKind};
 use crate::settings::{to_fahrenheit, Settings};
-use crate::store::{Metric, Reading, Spot, Stats, StepSource, Store, Summary};
+use crate::store::{Metric, Reading, Spot, Stats, Store, Summary};
 use adw::prelude::*;
 use chart::{local_midnight, Chart};
 use chrono::{DateTime, Duration as Days, Local, TimeZone, Timelike};
@@ -584,7 +585,6 @@ pub fn build_window(
         search,
         switching: Default::default(),
     });
-    w.sleep.0.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
     {
         let w2 = w.clone();
         w.sleep.0.connect_activated(move |_| {
@@ -749,6 +749,7 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
         let w = w.clone();
         add_ring.connect_activate(move |_, _| w.search.start(&w.toasts));
     }
+    const DISCLAIMER: &str = "Ringmaster is not affiliated with any ring maker. It is not a medical device.";
     let about = gio::SimpleAction::new("about", None);
     {
         let window = window.clone();
@@ -757,7 +758,7 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
                 .application_name("Ringmaster")
                 .application_icon("net.dunevent.Ringmaster")
                 .version(env!("CARGO_PKG_VERSION"))
-                .comments("A companion for smart rings that keeps everything on this device. Not affiliated with any ring maker. Not a medical device.")
+                .comments("A companion for smart rings that keeps everything on this device.")
                 .developer_name("Ringmaster contributors")
                 .developers(["AJ Dunevent"])
                 .copyright("© 2026 Ringmaster contributors")
@@ -766,6 +767,7 @@ fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<W
                 .issue_url("https://dev.dunevent.net/aj/Ringmaster/issues")
                 .build();
             dialog.add_link("Donate", "https://dunevent.net/donate");
+            dialog.add_legal_section("Disclaimer", None, gtk::License::Custom, Some(DISCLAIMER));
             dialog.present(Some(&window));
         });
     }
@@ -815,10 +817,6 @@ fn redraw_temperature(w: &Widgets) {
     }
 }
 
-fn steps_text(steps: i64, goal: u32) -> String {
-    format!("{steps} / {goal}")
-}
-
 fn show_steps(w: &Widgets) {
     let Some(store) = w.store.as_ref() else { return };
     let Some(ring) = w.ring.borrow().clone() else {
@@ -826,12 +824,9 @@ fn show_steps(w: &Widgets) {
         w.steps.0.set_subtitle("");
         return;
     };
-    let Ok((steps, source)) = store.steps_today(&ring) else { return };
-    w.steps.1.set_text(&steps_text(steps, w.settings.borrow().step_goal));
-    w.steps.0.set_subtitle(match source {
-        StepSource::Ring => "Today",
-        StepSource::Connected => "Today, counted while connected",
-    });
+    let Ok((steps, _)) = store.steps_today(&ring) else { return };
+    w.steps.1.set_text(&steps.to_string());
+    w.steps.0.set_subtitle(&format!("Goal {}", w.settings.borrow().step_goal));
 }
 
 fn battery_icon(percent: u8, charging: bool) -> String {
@@ -1081,15 +1076,24 @@ fn load_week(w: &Widgets) {
     w.week.chart.set(metric, from, to, points, sleep);
 }
 
-/// Hours to one decimal place, for example "6.5 h".
-pub(super) fn duration(seconds: i64) -> String {
-    format!("{:.1} h", seconds as f64 / 3600.0)
+/// `text` with no-break spaces, so a duration is never split across lines.
+pub(super) fn unbroken(text: &str) -> String {
+    text.replace(' ', "\u{a0}")
 }
 
-/// "8", or "7.5" for a goal with minutes; at most two decimal places, as entered in Preferences.
-fn goal_text(seconds: i64) -> String {
-    let text = format!("{:.2}", seconds as f64 / 3600.0);
-    text.trim_end_matches('0').trim_end_matches('.').to_string()
+/// Whole minutes in `seconds`, rounded as `duration` shows them.
+pub(super) fn shown_minutes(seconds: i64) -> i64 {
+    (seconds.max(0) + 30) / 60
+}
+
+/// "7h 42m", or "25m" under an hour, for every sleep duration shown.
+pub(super) fn duration(seconds: i64) -> String {
+    let m = shown_minutes(seconds);
+    if m >= 60 {
+        format!("{}h {:02}m", m / 60, m % 60)
+    } else {
+        format!("{m}m")
+    }
 }
 
 /// The case reports its battery only while the ring sits in it; older readings are dimmed.
@@ -1354,11 +1358,11 @@ fn show_summary(w: &Widgets, s: &Summary) {
     w.activity_page.refresh();
 }
 
-/// "23:10–06:48 · 52 min awake": when the sleep ran and the wakings left out of its duration.
+/// "23:10–06:48 · 52m awake": when the sleep ran and the wakings left out of its duration.
 pub(super) fn sleep_subtitle(spans: &[(i64, i64)], awake: i64, at: impl Fn(i64) -> String) -> String {
     let mut text = spans.iter().map(|(a, b)| format!("{}–{}", at(*a), at(*b))).collect::<Vec<_>>().join(", ");
     if awake >= 60 {
-        text.push_str(&format!(" · {} min awake", awake / 60));
+        text.push_str(&format!(" · {} awake", unbroken(&duration(awake))));
     }
     text
 }
@@ -1381,8 +1385,8 @@ fn show_sleep(w: &Widgets) {
         Some((start, end)) => {
             let awake = store.awake(&ring, start, end).unwrap_or(0);
             let goal = w.settings.borrow().sleep_goal_minutes as i64 * 60;
-            w.sleep.1.set_text(&format!("{:.1} / {} h", (end - start - awake) as f64 / 3600.0, goal_text(goal)));
-            w.sleep.0.set_subtitle(&sleep_subtitle(&[(start, end)], awake, at));
+            w.sleep.1.set_text(&duration(end - start - awake));
+            w.sleep.0.set_subtitle(&format!("{} · goal {}", sleep_subtitle(&[(start, end)], 0, at), unbroken(&duration(goal))));
         }
         None => {
             w.sleep.1.set_text("–");
@@ -1396,8 +1400,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn sleep_durations() {
+        assert_eq!(duration(7 * 3600 + 42 * 60), "7h 42m");
+        assert_eq!(duration(3600 + 8 * 60 + 29), "1h 08m");
+        assert_eq!(duration(25 * 60), "25m");
+        // 6 h 59 min 40 s shows as 7h 00m.
+        assert_eq!(duration(7 * 3600 - 20), "7h 00m");
+        assert_eq!(shown_minutes(7 * 3600 - 20), 420);
+    }
+
+    #[test]
     fn steps_against_goal() {
-        assert_eq!(steps_text(6822, 10_000), "6822 / 10000");
         let history = Some(Reading { value: 61, unix: 100 });
         let quick = Some(Spot { value: 63.4, samples: 10, unix: 200, range: None });
         assert_eq!(newest(history, quick), (Some(Reading { value: 63, unix: 200 }), true));
