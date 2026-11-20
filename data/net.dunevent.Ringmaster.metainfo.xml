@@ -61,6 +61,15 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.10" date="2026-11-19">
+      <description>
+        <p>Much less memory in the background.</p>
+        <ul>
+          <li>With the window closed, Ringmaster keeps running without its interface loaded, using a fraction of the memory</li>
+          <li>Less memory with the window open as well</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.9" date="2026-11-18">
       <description>
         <p>Sleep stages and a profile.</p>

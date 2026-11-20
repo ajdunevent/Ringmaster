@@ -109,7 +109,8 @@ pub fn spawn(db_path: PathBuf) -> (async_channel::Sender<Command>, async_channel
     let (cmd_tx, cmd_rx) = async_channel::unbounded();
     let (evt_tx, evt_rx) = async_channel::unbounded();
     std::thread::spawn(move || {
-        let rt = match tokio::runtime::Runtime::new() {
+        // One thread is enough for a single ring's link, and keeps the background process small.
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
             Ok(rt) => rt,
             Err(e) => {
                 let _ = evt_tx.send_blocking(Event::Error(format!("cannot start the Bluetooth thread: {e}")));

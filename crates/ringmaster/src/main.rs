@@ -37,6 +37,9 @@ pub(crate) fn database_path() -> PathBuf {
     glib::user_data_dir().join("ringmaster").join("ringmaster.db")
 }
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
 fn main() -> glib::ExitCode {
     use_host_system_bus();
     tracing_subscriber::fmt()
@@ -44,9 +47,9 @@ fn main() -> glib::ExitCode {
         .init();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let hidden = match args.as_slice() {
-        [] => false,
-        [flag] if flag == "--hidden" => true,
+    match args.as_slice() {
+        [] => {}
+        [flag] if flag == "--hidden" => return headless(),
         [flag, file] if flag == "--import-probe-report" => return import(file),
         [flag, file] if flag == "--import-ringconn-app" => return import_official(file),
         _ => {
@@ -56,35 +59,99 @@ fn main() -> glib::ExitCode {
     };
 
     let app = adw::Application::builder().application_id(APP_ID).build();
-    let window: std::rc::Rc<std::cell::RefCell<Option<adw::ApplicationWindow>>> = Default::default();
-    // The guard has to be kept: dropping it releases the hold at once.
-    let hold: std::rc::Rc<std::cell::RefCell<Option<gio::ApplicationHoldGuard>>> = Default::default();
-    let first = std::cell::Cell::new(true);
+    let window: Rc<RefCell<Option<ui::Window>>> = Default::default();
+    let backend: Rc<RefCell<Option<async_channel::Sender<backend::Command>>>> = Default::default();
+    let to_headless = Rc::new(Cell::new(false));
     app.connect_activate(move |app| {
         if let Some(existing) = window.borrow().as_ref() {
-            hold.take();
-            existing.present();
+            to_headless.set(false);
+            existing.window.present();
             return;
         }
         let (commands, events) = backend::spawn(database_path());
+        backend.replace(Some(commands.clone()));
+        {
+            let (window, to_headless) = (window.clone(), to_headless.clone());
+            glib::MainContext::default().spawn_local(async move {
+                while let Ok(event) = events.recv().await {
+                    if let Some(w) = window.borrow().as_ref() {
+                        w.apply(event);
+                    }
+                }
+                // The backend has stopped and its link is closed.
+                if to_headless.get() {
+                    replace_process(&["--hidden"]);
+                }
+            });
+        }
         let store = match store::Store::open(&database_path()) {
-            Ok(s) => Some(std::rc::Rc::new(s)),
+            Ok(s) => Some(Rc::new(s)),
             Err(e) => {
                 tracing::error!(error = %e, "cannot open the database for reading");
                 None
             }
         };
-        let new_window = ui::build_window(app, commands, events, store);
-        if hidden && first.get() {
-            hold.replace(Some(app.hold()));
-        } else {
-            new_window.present();
-        }
-        first.set(false);
-        window.replace(Some(new_window));
+        // Closing the window while Ringmaster keeps running replaces this process with one that
+        // runs only the backend, once the backend here has closed its link: a process with GTK
+        // and its renderer loaded holds far more memory than the backend needs.
+        let to_background: Rc<dyn Fn()> = {
+            let (to_headless, commands) = (to_headless.clone(), commands.clone());
+            Rc::new(move || {
+                to_headless.set(true);
+                let _ = commands.try_send(backend::Command::Shutdown);
+            })
+        };
+        let built = ui::build_window(app, commands, store, to_background);
+        built.window.present();
+        window.replace(Some(built));
     });
     // GTK would otherwise parse leftover arguments as files to open.
     app.run_with_args(&[] as &[&str])
+}
+
+/// Returns freed heap to the system once the window is gone, so the background process is small
+/// Runs only the backend, with no window and without loading GTK, as at login or after the window
+/// closes. Opening Ringmaster replaces this process with one that has a window, once the backend
+/// here has closed its link; until then alerts still arrive as notifications.
+fn headless() -> glib::ExitCode {
+    let app = gio::Application::builder().application_id(APP_ID).build();
+    let (commands, events) = backend::spawn(database_path());
+    let _hold = app.hold();
+    let wanted = Rc::new(Cell::new(false));
+    // `run` activates the application once at start; only later activations ask for a window.
+    let started = Cell::new(false);
+    {
+        let wanted = wanted.clone();
+        app.connect_activate(move |_| {
+            if started.replace(true) {
+                wanted.set(true);
+                let _ = commands.try_send(backend::Command::Shutdown);
+            }
+        });
+    }
+    {
+        let app = app.clone();
+        glib::MainContext::default().spawn_local(async move {
+            while let Ok(event) = events.recv().await {
+                if let backend::Event::Notify(alert) = event {
+                    ui::notify(&app, &alert);
+                }
+            }
+            if wanted.get() {
+                replace_process(&[]);
+            }
+            app.quit();
+        });
+    }
+    app.run_with_args(&[] as &[&str])
+}
+
+/// Replaces this process with Ringmaster started with `args`.
+fn replace_process(args: &[&str]) {
+    use std::os::unix::process::CommandExt;
+    let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ringmaster"));
+    let error = std::process::Command::new(exe).args(args).exec();
+    tracing::error!(error = %error, "cannot restart Ringmaster");
 }
 
 fn import_official(file: &str) -> glib::ExitCode {

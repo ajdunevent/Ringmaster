@@ -287,12 +287,33 @@ fn stack_to_fit(row: &gtk::Box, beside: &gtk::DrawingArea) {
     });
 }
 
+/// The window and the state its events are applied to.
+pub struct Window {
+    pub window: adw::ApplicationWindow,
+    widgets: Rc<Widgets>,
+}
+
+impl Window {
+    pub fn apply(&self, event: Event) {
+        apply(&self.widgets, event);
+    }
+}
+
+/// Shows `alert` as a desktop notification, with or without a window.
+pub fn notify(app: &impl IsA<gio::Application>, alert: &crate::settings::Alert) {
+    let n = gio::Notification::new(&alert.title);
+    n.set_body(Some(&alert.body));
+    app.send_notification(Some(&format!("rule-{}", alert.rule_id)), &n);
+}
+
+/// Builds the window. `to_background` is called when it closes while Ringmaster keeps running;
+/// the window is hidden then, and the process is replaced by one without a window.
 pub fn build_window(
     app: &adw::Application,
     commands: async_channel::Sender<Command>,
-    events: async_channel::Receiver<Event>,
     store: Option<Rc<Store>>,
-) -> adw::ApplicationWindow {
+    to_background: Rc<dyn Fn()>,
+) -> Window {
     load_css();
     let send = {
         let commands = commands.clone();
@@ -673,19 +694,12 @@ pub fn build_window(
         });
     }
 
-    let w_events = w.clone();
-    glib::MainContext::default().spawn_local(async move {
-        while let Ok(event) = events.recv().await {
-            apply(&w_events, event);
-        }
-    });
-
     {
         let (w2, commands) = (w.clone(), commands.clone());
         window.connect_close_request(move |window| {
             if w2.settings.borrow().run_in_background {
                 window.set_visible(false);
-                let _ = commands.try_send(Command::WindowVisible(false));
+                to_background();
                 return glib::Propagation::Stop;
             }
             let _ = commands.try_send(Command::Shutdown);
@@ -694,14 +708,12 @@ pub fn build_window(
     }
     {
         let commands = commands.clone();
-        window.connect_visible_notify(move |window| {
-            if window.is_visible() {
-                let _ = commands.try_send(Command::WindowVisible(true));
-            }
+        window.connect_map(move |_| {
+            let _ = commands.try_send(Command::WindowVisible(true));
         });
     }
     add_actions(app, &window, &w, commands);
-    window
+    Window { window, widgets: w }
 }
 
 fn add_actions(app: &adw::Application, window: &adw::ApplicationWindow, w: &Rc<Widgets>, commands: async_channel::Sender<Command>) {
@@ -1266,11 +1278,7 @@ fn apply(w: &Widgets, event: Event) {
             show_session(&w.measure);
         }
         Event::Summary(s) => show_summary(w, &s),
-        Event::Notify(alert) => {
-            let n = gio::Notification::new(&alert.title);
-            n.set_body(Some(&alert.body));
-            w.app.send_notification(Some(&format!("rule-{}", alert.rule_id)), &n);
-        }
+        Event::Notify(alert) => notify(&w.app, &alert),
         Event::ChooseRing(choices) => {
             w.pull.finish();
             w.search.choose(&choices, &w.toasts);

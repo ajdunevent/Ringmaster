@@ -26,6 +26,16 @@ from [flatpak-builder-tools](https://github.com/flatpak/flatpak-builder-tools). 
 database is in `~/.var/app/net.dunevent.Ringmaster/data/ringmaster/`, and start at login goes
 through the Background portal.
 
+## In the background
+
+With the window closed, Ringmaster runs as `ringmaster --hidden`: the backend and its link to the
+ring, with no GTK and no renderer loaded (about 30 MB resident against about 230 MB with a window,
+measured on x86_64 under Xvfb). Closing the window stops the backend, which closes the link, and
+then replaces the process with `ringmaster --hidden`; opening Ringmaster replaces the background
+process with one that has a window the same way. The link is set up again each time, and a sync
+in progress when the window closes stops and resumes at the next one. Notifications still arrive
+from the background process. Start at login runs `--hidden` directly.
+
 ## Distrobox
 
 Inside a Distrobox container, Ringmaster and ringprobe find the host's Bluetooth service on their

@@ -57,7 +57,8 @@ Stages need a RingConn ring.
 
 - Syncs on opening and on a schedule (every 5, 15, 30, 60 or 90 minutes), and catches up when the
   phone wakes
-- Keeps running with the window closed, starts at login if you like, and stays connected
+- Keeps running with the window closed, with only the part that talks to the ring loaded so it
+  uses little memory; starts at login if you like, and stays connected
 - Notifications on rules you set: battery, case battery, skin temperature, heart rate, HRV, blood
   oxygen, respiratory rate, steps and days since the last sync
 - More than one ring: add rings and switch between them, each with its own history
