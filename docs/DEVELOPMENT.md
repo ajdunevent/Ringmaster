@@ -36,6 +36,11 @@ process with one that has a window the same way. The link is set up again each t
 in progress when the window closes stops and resumes at the next one. Notifications still arrive
 from the background process. Start at login runs `--hidden` directly.
 
+Under Flatpak the background process also sets its status through the Background portal
+(version 2 and later), which desktops show in their list of apps running in the background: the
+link state, the ring's battery and the last sync, for example "Connected to Gen2 · 72 % · synced
+15:40". The status is sent once it has stayed the same for a second, and only when it changes.
+
 ## Distrobox
 
 Inside a Distrobox container, Ringmaster and ringprobe find the host's Bluetooth service on their

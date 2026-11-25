@@ -59,6 +59,7 @@ Stages need a RingConn ring.
   phone wakes
 - Keeps running with the window closed, with only the part that talks to the ring loaded so it
   uses little memory; starts at login if you like, and stays connected
+- Shows what the ring is doing in the desktop's list of apps running in the background
 - Notifications on rules you set: battery, case battery, skin temperature, heart rate, HRV, blood
   oxygen, respiratory rate, steps and days since the last sync
 - More than one ring: add rings and switch between them, each with its own history

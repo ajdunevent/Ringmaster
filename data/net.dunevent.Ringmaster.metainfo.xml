@@ -61,6 +61,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.1.11" date="2026-11-25">
+      <description>
+        <p>With the window closed, the desktop's list of apps running in the background shows whether the ring is connected, its battery and the last sync.</p>
+      </description>
+    </release>
     <release version="0.1.10" date="2026-11-19">
       <description>
         <p>Much less memory in the background.</p>

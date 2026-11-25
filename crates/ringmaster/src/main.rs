@@ -4,6 +4,7 @@ mod import;
 mod settings;
 mod sleep;
 mod stages;
+mod status;
 mod store;
 mod ui;
 
@@ -109,10 +110,10 @@ fn main() -> glib::ExitCode {
     app.run_with_args(&[] as &[&str])
 }
 
-/// Returns freed heap to the system once the window is gone, so the background process is small
 /// Runs only the backend, with no window and without loading GTK, as at login or after the window
 /// closes. Opening Ringmaster replaces this process with one that has a window, once the backend
-/// here has closed its link; until then alerts still arrive as notifications.
+/// here has closed its link; until then alerts still arrive as notifications. The desktop's list
+/// of background apps shows what the ring is doing.
 fn headless() -> glib::ExitCode {
     let app = gio::Application::builder().application_id(APP_ID).build();
     let (commands, events) = backend::spawn(database_path());
@@ -129,10 +130,23 @@ fn headless() -> glib::ExitCode {
             }
         });
     }
+    let status = Rc::new(RefCell::new(status::Status::default()));
+    let portal = Rc::new(RefCell::new(status::Portal::new()));
+    // Times in the status read "yesterday" once the day changes.
+    {
+        let (status, portal) = (status.clone(), portal.clone());
+        glib::timeout_add_seconds_local(60, move || {
+            portal.borrow_mut().show(status.borrow().text(chrono::Local::now()));
+            glib::ControlFlow::Continue
+        });
+    }
     {
         let app = app.clone();
         glib::MainContext::default().spawn_local(async move {
             while let Ok(event) = events.recv().await {
+                if status.borrow_mut().apply(&event) {
+                    portal.borrow_mut().show(status.borrow().text(chrono::Local::now()));
+                }
                 if let backend::Event::Notify(alert) = event {
                     ui::notify(&app, &alert);
                 }
